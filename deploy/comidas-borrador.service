@@ -1,0 +1,13 @@
+[Unit]
+Description=comidas: genera el borrador del plan de la semana siguiente y lo avisa al móvil
+After=network-online.target mealie.service
+Wants=mealie.service
+
+[Service]
+Type=oneshot
+User=www-data
+WorkingDirectory=/opt/comidas
+EnvironmentFile=/opt/comidas/.env
+# Base de datos del panel: /var/lib/comidas/comidas.db (systemd crea el directorio como www-data).
+StateDirectory=comidas
+ExecStart=/opt/comidas/.venv/bin/python -m panel.generar --avisar

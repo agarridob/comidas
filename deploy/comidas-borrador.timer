@@ -1,0 +1,10 @@
+[Unit]
+Description=comidas: borrador semanal los domingos a las 9:00
+
+[Timer]
+OnCalendar=Sun *-*-* 09:00:00 Europe/Madrid
+# Si el contenedor estaba apagado a esa hora, se lanza al arrancar.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

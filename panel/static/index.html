@@ -1,0 +1,749 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f5ecd5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#17110e" media="(prefers-color-scheme: dark)">
+<title>Comidas</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='88'>🍲</text></svg>">
+<style>
+  @font-face{
+    font-family:'Montserrat';font-style:normal;font-weight:100 900;font-display:swap;
+    src:url('/static/fonts/Montserrat.var.woff2') format('woff2');
+  }
+  /* Paleta cálida (crema y burdeos) con la estructura de
+     Supper-Board: una columna mobile-first y barra de pestañas abajo. --frio = el
+     aviso de descongelar. */
+  :root{
+    --bg:#f5ecd5; --card:#fffaf0; --soft:#f7eedb; --ink:#2a1812; --muted:#8a6a4a;
+    --line:#e7d7b6; --line2:#d6bf98;
+    --verde:#5f7d4a; --ambar:#c9a227; --rojo:#a8324a; --accent:#6e0f2a; --gold:#a8771a;
+    --frio:#2f6f8f; --frio-bg:#e3edf0;
+    --shadow:0 1px 2px rgba(80,40,20,.05),0 6px 20px rgba(80,40,20,.06);
+    --serif:Georgia,"Times New Roman",serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#17110e; --card:#221a15; --soft:#2a211b; --ink:#f0e6d2; --muted:#b39a7c;
+           --line:#342a22; --line2:#4a3d31;
+           --verde:#9cbb84; --ambar:#e0c05a; --rojo:#e58ba0; --accent:#c05c76; --gold:#d9b25a;
+           --frio:#7fb3cc; --frio-bg:#1b2a30;
+           --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.25); }
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.45 'Montserrat',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  button{font:inherit;color:inherit}
+  main{max-width:640px;margin:0 auto;padding:1.25rem 1rem calc(6rem + env(safe-area-inset-bottom))}
+
+  /* --- Cabecera --------------------------------------------------------------- */
+  /* Mantel de vichy: dos bandas cruzadas semitransparentes del acento. */
+  .franja{height:14px;border-radius:4px;margin-bottom:1.1rem;opacity:.85;
+    background:
+      repeating-linear-gradient(90deg,color-mix(in srgb,var(--accent) 55%,transparent) 0 7px,transparent 7px 14px),
+      repeating-linear-gradient(0deg,color-mix(in srgb,var(--accent) 55%,transparent) 0 7px,transparent 7px 14px)}
+  .fecha{color:var(--muted);font-size:.78rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+  h1{font-family:var(--serif);font-size:2.1rem;line-height:1.1;margin:.15rem 0 1.1rem}
+  h2{font-family:var(--serif);font-size:1.2rem;margin:1.6rem 0 .6rem}
+
+  /* --- Tarjetas --------------------------------------------------------------- */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:1.1rem 1.2rem;
+    box-shadow:var(--shadow);margin-bottom:.8rem}
+  .tag{display:inline-block;border:1px solid var(--line2);border-radius:999px;padding:.12rem .6rem;
+    font-size:.7rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .plato{font-family:var(--serif);font-size:1.45rem;font-weight:700;line-height:1.2;margin:.55rem 0 .3rem}
+  .plato a{color:inherit;text-decoration:none}
+  .plato a:hover{color:var(--accent)}
+  /* La próxima comida va destacada, con la foto de la receta si la tiene. */
+  .hero{padding:0;overflow:hidden}
+  .hero .foto{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:var(--soft)}
+  .hero .cuerpo{padding:1.1rem 1.2rem 1.2rem}
+  .hero .plato{font-size:1.85rem}
+  .tag.ahora{background:var(--accent);border-color:var(--accent);color:#fff}
+  .desplegar{display:block;width:100%;margin-top:.9rem;padding:.6rem 0 0;background:none;border:0;
+    border-top:1px solid var(--line);color:var(--accent);font-weight:700;font-size:.88rem;text-align:left;cursor:pointer}
+  .receta{padding-top:.4rem}
+  .receta h4{font-family:var(--serif);font-size:1rem;margin:1rem 0 .4rem}
+  .receta ul, .receta ol{margin:0;padding-left:1.3rem}
+  .receta li{padding:.35rem 0;cursor:pointer;line-height:1.4}
+  .receta .ings li{list-style:none;margin-left:-1.3rem;padding-left:1.6rem;position:relative}
+  .receta .ings li::before{content:"";position:absolute;left:0;top:.6rem;width:14px;height:14px;
+    border:1.5px solid var(--line2);border-radius:4px}
+  .receta .ings li.tachado::before{background:var(--accent);border-color:var(--accent)}
+  .receta .ings li.sec{cursor:default;font-weight:700;color:var(--muted);padding-left:0}
+  .receta .ings li.sec::before{display:none}
+  .receta .pasos li{padding-left:.2rem}
+  .receta .pasos li::marker{font-weight:700;color:var(--accent)}
+  .receta li.tachado{color:var(--muted);text-decoration:line-through}
+  .receta .wake{display:flex;align-items:center;gap:.5rem;margin:.7rem 0 0;font-size:.88rem;font-weight:600;cursor:pointer}
+  .receta .wake input{width:20px;height:20px;accent-color:var(--accent)}
+  .receta a{color:var(--accent);font-weight:700}
+  .compacta .plato{font-size:1.15rem;margin:.4rem 0 .1rem}
+  .meta{color:var(--muted);font-size:.85rem}
+  .fila{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-top:.8rem}
+  .btn{border:1px solid var(--line2);background:var(--card);border-radius:12px;padding:.55rem .95rem;
+    font-weight:700;font-size:.9rem;cursor:pointer;min-height:44px}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn.prim{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.prim:hover{filter:brightness(1.1);color:#fff}
+  .btn:disabled{opacity:.5;cursor:default}
+  .posponer{display:inline-flex;gap:.4rem}
+  .congelador .cg-fila{display:flex;align-items:center;justify-content:space-between;gap:.6rem;padding:.35rem 0;
+    border-top:1px solid var(--line)}
+  .congelador .cg-fila:first-child{border-top:0}
+  .congelador .cg-n{display:inline-flex;align-items:center;gap:.5rem}
+  .congelador .cg-n .btn{min-height:34px;width:34px;padding:0}
+  .cg-ayuda{margin-top:.6rem;font-size:.78rem}
+  .tag.sobras{color:var(--frio);border-color:color-mix(in srgb,var(--frio) 45%,transparent)}
+  .nota-btn{display:block;padding:.55rem 0 0;font-size:.85rem}
+  .nota-form{margin:.7rem 0 0}
+  .nota-form .btn{padding:.5rem .8rem}
+  .nota-receta{display:block;font-size:.78rem;color:var(--muted);font-style:normal;margin-top:.15rem;line-height:1.35}
+  .receta .notas{padding-left:0}
+  .receta .notas li{list-style:none;cursor:default;padding:.2rem 0}
+  .vacio{color:var(--muted);text-align:center;padding:1.2rem .5rem}
+
+  /* Estrellas */
+  .estrellas{display:inline-flex;gap:.1rem}
+  .estrellas button{background:none;border:0;padding:.2rem;cursor:pointer;font-size:1.6rem;line-height:1;
+    color:var(--line2);min-width:40px;min-height:40px}
+  .estrellas button.on{color:var(--gold)}
+
+  /* Descongelar */
+  .frio{background:var(--frio-bg);border-color:transparent;display:flex;gap:.9rem;align-items:flex-start}
+  .frio .ico{font-size:1.7rem;line-height:1;color:var(--frio)}
+  .frio b{color:var(--frio)}
+  .frio a{color:inherit;font-weight:700;text-decoration-color:var(--frio)}
+  .frio-btn{background:var(--frio);border-color:var(--frio);color:#fff}
+  .frio-btn:hover{color:#fff;border-color:var(--frio);filter:brightness(1.1)}
+  .frio.hecho{background:var(--card);border:1px solid var(--line);padding:.75rem 1.2rem;align-items:center}
+  .frio.hecho .ico{font-size:1.2rem;color:var(--verde)}
+  .enlace{background:none;border:0;padding:0 0 0 .4rem;color:var(--accent);font-weight:700;cursor:pointer;font-size:inherit}
+
+  /* Puntúa (lo de la última semana sin valorar) */
+  .valorar{background:color-mix(in srgb,var(--ambar) 18%,var(--card));border-color:transparent}
+  .valorar h3{font-family:var(--serif);font-size:1.1rem;margin:0 0 .3rem}
+  .puntua{padding:.6rem 0;border-top:1px solid color-mix(in srgb,var(--ambar) 30%,transparent)}
+  .puntua:first-of-type{border-top:0;padding-top:.2rem}
+  .puntua a{color:inherit;font-weight:700}
+  .puntua .estrellas{margin:.2rem 0 0 -.2rem}
+
+  /* Plan: una fila por día (lunes a domingo), con el número grande a la izquierda.
+     Lo pasado, atenuado; hoy, resaltado. */
+  .card.semana{padding:0;overflow:hidden}
+  .dia{display:grid;grid-template-columns:3.4rem minmax(0,1fr);gap:.9rem;padding:.85rem 1.1rem;border-top:1px solid var(--line)}
+  .dia:first-child{border-top:0}
+  .dia .d{text-align:center;align-self:center;line-height:1}
+  .dia .d small{display:block;color:var(--muted);font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+  .dia .d b{display:block;font-family:var(--serif);font-size:1.75rem;margin-top:.2rem}
+  .dia.hoy{background:color-mix(in srgb,var(--accent) 9%,var(--card))}
+  .dia.hoy .d small, .dia.hoy .d b{color:var(--accent)}
+  .dia.pasado{opacity:.55}
+  .dia.pasado:has(.receta){opacity:1}
+  .dia:has(.receta) .d{align-self:start}
+  .dia .comidas{display:flex;flex-direction:column;justify-content:center;gap:.45rem;min-width:0}
+  .dia .e{display:flex;gap:.5rem;align-items:flex-start}
+  .dia .e > div{flex:1;min-width:0}
+  .dia .e small.tipo{color:var(--muted);font-size:.66rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+    display:block;margin-bottom:.05rem}
+  .dia .e .t{font-weight:650;line-height:1.3}
+  .dia .e .abre{display:block;width:100%;background:none;border:0;padding:0;text-align:left;cursor:pointer;font-style:inherit}
+  .dia .e .abre::after{content:"›";display:inline-block;margin-left:.35rem;color:var(--muted);font-weight:500;transition:transform .15s}
+  .dia .e .abre[aria-expanded="true"]::after{transform:rotate(90deg)}
+  .dia .e .abre:hover{color:var(--accent)}
+  .dia .receta{font-size:.92rem}
+  .dia .e.recalentar .t{font-weight:500}
+  .dia .e.es-borrador .t{font-style:italic}
+  .dia .info{display:flex;flex-wrap:wrap;align-items:center;gap:.25rem .5rem;margin-top:.25rem}
+  .dia .info:empty{display:none}
+  .pill{display:inline-block;border-radius:999px;padding:.12rem .55rem;font-size:.64rem;font-weight:700;letter-spacing:.07em;
+    text-transform:uppercase;background:var(--soft);color:var(--muted)}
+  .pill.cocina{background:color-mix(in srgb,var(--accent) 14%,var(--card));color:var(--accent)}
+  .pill.frio{background:var(--frio-bg);color:var(--frio)}
+  .mini-estrellas{color:var(--gold);font-size:.8rem;letter-spacing:.05em}
+  .mini-estrellas i{font-style:normal;color:var(--line2)}
+  .dia .libre{color:var(--muted);font-size:.88rem}
+  .dia .aviso-frio{display:flex;gap:.4rem;color:var(--frio);font-size:.82rem;line-height:1.35}
+  .dia .aviso-frio.hecho{color:var(--verde)}
+  .dia .e .cambiar{flex:0 0 auto;background:none;border:1px dashed var(--line2);border-radius:8px;
+    color:var(--accent);font-size:1rem;line-height:1;width:34px;height:34px;cursor:pointer}
+  .dia .e .cambiar:hover{border-color:var(--accent)}
+  .borrador-card{border:1.5px dashed var(--accent)}
+  .sem-h{display:flex;align-items:baseline;justify-content:space-between;gap:.8rem;margin:1.4rem 0 .5rem}
+  .sem-h:first-child{margin-top:0}
+  .sem-h h3{font-family:var(--serif);font-size:1.1rem;margin:0}
+  .sem-h span{color:var(--muted);font-size:.85rem;white-space:nowrap}
+  .sem-borrador, .sem-vacia{padding:1.1rem 1.2rem .9rem}
+  .sem-borrador + .dia, .sem-vacia + .dia{border-top:1px solid var(--line)}
+  .sem-borrador .meta{margin-top:.4rem}
+
+  /* Compra */
+  .anadir{display:flex;gap:.5rem;margin-bottom:.8rem}
+  .anadir input{flex:1;min-width:0;border:1px solid var(--line2);background:var(--card);color:var(--ink);
+    border-radius:12px;padding:.6rem .9rem;font:inherit;min-height:44px}
+  .lista{padding:0;overflow:hidden}
+  .item{display:flex;align-items:center;gap:.8rem;padding:.75rem 1.1rem;border-top:1px solid var(--line);cursor:pointer;
+    min-height:52px;user-select:none}
+  .item:first-child{border-top:0}
+  .item input{width:22px;height:22px;accent-color:var(--accent);flex:0 0 auto;cursor:pointer}
+  .item.hecho span{color:var(--muted);text-decoration:line-through}
+  .carro-h{display:flex;align-items:center;justify-content:space-between;gap:.8rem;margin:1.6rem 0 .6rem}
+  .carro-h h2{margin:0}
+  .carro-h .btn{font-size:.82rem;padding:.4rem .8rem;min-height:38px;color:var(--rojo)}
+  .prep-cta{display:flex;align-items:center;justify-content:space-between;gap:.8rem}
+  .prep{padding:0;overflow:hidden}
+  .prep-h{padding:1rem 1.1rem .6rem;display:flex;flex-direction:column;gap:.1rem}
+  .prep .fila{padding:.4rem 1.1rem 1rem}
+  .prep .lista .item{align-items:flex-start}
+  .prep .item input{margin-top:.15rem}
+  .prep .item.apagado .prep-n{color:var(--muted)}
+  .prep-r{display:block;color:var(--muted);font-size:.74rem;margin-top:.1rem}
+  .prep-sub{padding:.8rem 1.1rem .3rem;color:var(--muted);font-size:.74rem;font-weight:700;letter-spacing:.06em;
+    text-transform:uppercase;border-top:1px solid var(--line)}
+  .resumen{color:var(--muted);font-size:.85rem;font-weight:600;margin:0 0 .5rem}
+
+  /* --- Barra de pestañas ------------------------------------------------------ */
+  nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:5;display:flex;justify-content:center;
+    background:color-mix(in srgb,var(--card) 92%,transparent);border-top:1px solid var(--line);
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);padding-bottom:env(safe-area-inset-bottom)}
+  nav.tabs .in{display:flex;width:100%;max-width:640px}
+  nav.tabs button{flex:1;background:none;border:0;padding:.55rem 0 .6rem;cursor:pointer;color:var(--muted);
+    font-size:.78rem;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:.15rem;position:relative}
+  nav.tabs button svg{width:24px;height:24px}
+  nav.tabs button.on{color:var(--accent)}
+  nav.tabs button:focus{outline:none}
+  nav.tabs button:focus-visible{outline:2px solid var(--accent);outline-offset:-4px;border-radius:10px}
+  .badge{position:absolute;top:.25rem;left:calc(50% + 6px);background:var(--gold);color:#fff;border-radius:999px;
+    font-size:.68rem;min-width:1.2rem;height:1.2rem;line-height:1.2rem;padding:0 .3rem;text-align:center}
+
+  /* Aviso flotante (deshacer, errores) */
+  #toast{position:fixed;left:50%;bottom:calc(5rem + env(safe-area-inset-bottom));transform:translateX(-50%);
+    background:var(--ink);color:var(--bg);border-radius:12px;padding:.65rem 1rem;font-size:.9rem;display:none;
+    align-items:center;gap:1rem;z-index:6;box-shadow:var(--shadow);max-width:calc(100% - 2rem)}
+  #toast span{white-space:nowrap}
+  #toast button{background:none;border:0;color:var(--ambar);font-weight:700;cursor:pointer}
+
+  @media (min-width:768px){ h1{font-size:2.5rem} main{padding-top:2rem} }
+
+  /* --- Vista general (escritorio): Hoy · Plan · Compra en tres columnas ------ */
+  .solo-escritorio, .col-h{display:none}
+  @media (min-width:1024px){
+    main{max-width:1440px;padding:2rem 2rem 3rem;display:grid;gap:0 1.6rem;align-items:start;
+      grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,.9fr)}
+    .cab{grid-column:1 / -1}
+    .col[hidden]{display:block}
+    .col-h{display:block;font-family:var(--serif);font-size:1.3rem;margin:0 0 .8rem;padding-bottom:.5rem;
+      border-bottom:1px solid var(--line2)}
+    .solo-escritorio{display:inline} .solo-movil{display:none}
+    nav.tabs{display:none}
+    #toast{bottom:1.5rem}
+    /* En la columna, los subtítulos internos de Compra no compiten con el de la columna. */
+    .col .carro-h{margin-top:1.2rem}
+    /* El borrador ya se ve en la columna Plan. */
+    .aviso-borrador{display:none}
+  }
+</style>
+</head>
+<body>
+<main>
+  <header class="cab">
+    <div class="franja"></div>
+    <div class="fecha" id="fecha"></div>
+    <h1><span class="solo-movil" id="titulo">Hoy</span><span class="solo-escritorio">Comidas</span></h1>
+  </header>
+  <div class="col" id="c-hoy"><h2 class="col-h">Hoy</h2>
+    <section id="v-hoy"><div class="vacio">Cargando…</div></section></div>
+  <div class="col" id="c-semana" hidden><h2 class="col-h">Plan</h2><section id="v-semana"></section></div>
+  <div class="col" id="c-compra" hidden><h2 class="col-h">Compra</h2><section id="v-compra"></section></div>
+</main>
+
+<nav class="tabs"><div class="in">
+  <button data-v="hoy" class="on">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="7"/><circle cx="12" cy="13" r="3"/><path d="M5 4l1.5 2.5M19 4l-1.5 2.5"/></svg>Hoy</button>
+  <button data-v="semana">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Plan<span class="badge" id="badge-semana" hidden>!</span></button>
+  <button data-v="compra">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16l-1.5 10a2 2 0 0 1-2 1.7h-9a2 2 0 0 1-2-1.7z"/><path d="M8 9l4-6 4 6"/></svg>Compra<span class="badge" id="badge" hidden></span></button>
+</div></nav>
+
+<div id="toast"><span id="toast-t"></span><button id="toast-b" hidden>Deshacer</button></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const TIPO = {lunch: "Comida", dinner: "Cena"};
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fechaLarga = iso => new Date(iso + "T12:00").toLocaleDateString("es-ES", {weekday:"long", day:"numeric", month:"long"});
+let PLAN = null, COMPRA = null;
+
+async function api(url, opts = {}) {
+  const r = await fetch(url, {headers: {"Content-Type": "application/json"}, ...opts});
+  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+  return r.json();
+}
+
+let toastT;
+function toast(texto, deshacer) {
+  $("toast-t").textContent = texto;
+  $("toast-b").hidden = !deshacer;
+  $("toast-b").onclick = () => { $("toast").style.display = "none"; deshacer(); };
+  $("toast").style.display = "flex";
+  clearTimeout(toastT);
+  toastT = setTimeout(() => $("toast").style.display = "none", deshacer ? 8000 : 4000);
+}
+const fallo = e => toast("No se pudo: " + e.message.slice(0, 80));
+
+/* --- Pestañas -------------------------------------------------------------- */
+const TITULOS = {hoy: "Hoy", semana: "Plan", compra: "Compra"};
+function vista(v) {
+  for (const b of document.querySelectorAll("nav.tabs button")) b.classList.toggle("on", b.dataset.v === v);
+  for (const k in TITULOS) $("c-" + k).hidden = k !== v;
+  $("titulo").textContent = TITULOS[v];
+  history.replaceState(null, "", "#" + v);
+  if (v === "compra") cargaCompra();
+}
+for (const b of document.querySelectorAll("nav.tabs button")) b.onclick = () => vista(b.dataset.v);
+
+/* --- Plan ------------------------------------------------------------------- */
+function estrellas(e) {
+  if (!e.slug) return "";
+  const n = Math.round(e.estrellas || 0);
+  return `<span class="estrellas" aria-label="Valorar">` +
+    [1,2,3,4,5].map(i => `<button class="${i <= n ? "on" : ""}" onclick="valorar('${esc(e.slug)}',${i})" aria-label="${i} estrellas">★</button>`).join("") +
+    `</span>`;
+}
+
+function platoTitulo(e) {
+  return e.url ? `<a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.titulo)}</a>` : esc(e.titulo);
+}
+
+function pintaHoy() {
+  const p = PLAN, h = [];
+  // Hasta las 16:00 lo siguiente es la comida; después, la cena (la comida baja).
+  const orden = new Date().getHours() < 16 ? ["lunch", "dinner"] : ["dinner", "lunch"];
+  orden.forEach((t, n) => {
+    const es = p.comidas_hoy.filter(e => e.tipo === t), hero = n === 0;
+    const tag = `<span class="tag ${hero ? "ahora" : ""}">${TIPO[t]}</span>`;
+    if (!es.length) {
+      h.push(`<div class="card compacta">${tag}<div class="meta" style="margin-top:.6rem">Nada planificado.</div></div>`);
+      return;
+    }
+    for (const e of es) h.push(`<div class="card ${hero ? "hero" : "compacta"}">
+      ${hero && e.foto ? `<img class="foto" src="${esc(e.foto)}" alt="" loading="lazy" onerror="this.remove()">` : ""}
+      <div class="${hero ? "cuerpo" : ""}">
+      ${tag}${e.borrador ? ` <span class="tag">borrador</span>` : ""}${e.del_congelador
+        ? ` <span class="tag sobras">❄ del congelador</span>`
+        : e.congelable && e.raciones > 1 ? ` <span class="tag" style="color:var(--frio)">❄ haz ${e.raciones} raciones · ${e.raciones - 1} al congelador</span>` : ""}
+      <div class="plato">${platoTitulo(e)}</div>
+      ${e.tiempo ? `<div class="meta">⏱ ${esc(e.tiempo)}</div>` : ""}
+      ${e.nota ? `<div class="meta">${esc(e.nota)}</div>` : ""}
+      <div class="fila">
+        ${e.borrador ? "" : `<span class="posponer"><button class="btn ${hero ? "prim" : ""}" onclick="posponer(${e.id},1)">Posponer un día</button>
+          <button class="btn" onclick="posponer(${e.id},2)" aria-label="Posponer dos días">2 días</button></span>`}
+        ${estrellas(e)}
+      </div>${e.slug ? htmlNota(e) + htmlReceta(e) : ""}</div></div>`);
+  });
+  for (const e of p.descongelar) h.push(e.descongelado
+    ? `<div class="card frio hecho"><div class="ico">✓</div><div class="meta">
+        ${platoTitulo(e)}: ya está en el frigo para mañana.
+        <button class="enlace" onclick="descongelado('${e.fecha}','${e.tipo}',false)">Deshacer</button></div></div>`
+    : `<div class="card frio"><div class="ico">❄</div><div>
+        <b>Antes de dormir:</b> pasa del congelador al frigo la ración de mañana (${TIPO[e.tipo].toLowerCase()}): ${platoTitulo(e)}.
+        <div class="fila"><button class="btn frio-btn" onclick="descongelado('${e.fecha}','${e.tipo}',true)">Hecho, está en el frigo</button></div>
+      </div></div>`);
+  const nb = p.semana.filter(e => e.borrador).length;
+  if (nb) h.push(`<div class="card borrador-card aviso-borrador"><span class="tag ahora">Borrador</span>
+      <div class="meta" style="margin-top:.5rem">Hay ${nb} ${nb === 1 ? "plato" : "platos"} del borrador por aprobar.</div>
+      <div class="fila"><button class="btn" onclick="vista('semana')">Revisar</button></div></div>`);
+  // Lo de la última semana sin valorar (el backend ya quita congelador y repetidas).
+  const pv = p.por_valorar.filter(e => !e.estrellas).slice(0, 4);
+  if (pv.length) h.push(`<div class="card valorar"><h3>Puntúa</h3>` + pv.map(e => `<div class="puntua">
+      <div>${platoTitulo(e)}<div class="meta">${TIPO[e.tipo]} ${cuando(e.fecha)}</div></div>
+      ${estrellas(e)}${htmlNota(e)}</div>`).join("") + `</div>`);
+  $("v-hoy").innerHTML = h.join("");
+}
+
+// Fechas ISO en hora local (no UTC: a las 00:30 en Madrid UTC aún es "ayer").
+const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+function sumaDias(isoFecha, n) { const d = new Date(isoFecha + "T12:00"); d.setDate(d.getDate() + n); return iso(d); }
+function lunesDe(isoFecha) { const d = new Date(isoFecha + "T12:00"); return sumaDias(isoFecha, -((d.getDay() + 6) % 7)); }
+// "de ayer", "del jueves"…, para los platos de la última semana.
+const cuando = f => f === sumaDias(PLAN.hoy, -1) ? "de ayer"
+  : "del " + new Date(f + "T12:00").toLocaleDateString("es-ES", {weekday: "long"});
+const fechaDM = f => new Date(f + "T12:00").toLocaleDateString("es-ES", {day: "numeric", month: "short"});
+
+// "5 – 11 oct", o "28 sep – 4 oct" si cambia el mes.
+function rango(desde, hasta) {
+  const [a, b] = [desde, hasta].map(f => new Date(f + "T12:00"));
+  const mes = d => d.toLocaleDateString("es-ES", {month: "short"}).replace(".", "");
+  return a.getMonth() === b.getMonth() ? `${a.getDate()} – ${b.getDate()} ${mes(b)}`
+    : `${a.getDate()} ${mes(a)} – ${b.getDate()} ${mes(b)}`;
+}
+
+// Estrellas solo para ver (las de votar están en Hoy).
+const miniEstrellas = e => e.estrellas ? `<span class="mini-estrellas" aria-label="${Math.round(e.estrellas)} estrellas">` +
+  [1,2,3,4,5].map(i => i <= Math.round(e.estrellas) ? "★" : "<i>★</i>").join("") + `</span>` : "";
+
+function htmlPlato(e) {
+  const info = [
+    e.del_congelador ? `<span class="pill frio">❄ Del congelador</span>`
+      : e.congelable && e.raciones > 1 ? `<span class="pill cocina" >Haz ${e.raciones} · ${e.raciones - 1} al congelador</span>` : "",
+    e.borrador ? "" : miniEstrellas(e),
+  ].join("");
+  return `<div class="e ${e.borrador ? "es-borrador" : ""} ${e.del_congelador ? "recalentar" : ""}"><div>
+      <small class="tipo">${TIPO[e.tipo]}</small>${e.slug
+        ? `<button class="t abre" onclick="${abreReceta("plan", e)}" aria-expanded="${ABIERTAS.has(claveReceta("plan", e))}">${esc(e.titulo)}</button>`
+        : `<div class="t">${esc(e.titulo)}</div>`}
+      <div class="info">${info}</div>${(e.notas_receta || []).map(n =>
+        `<span class="nota-receta">📝 ${fechaDM(n.fecha)}: ${esc(n.texto)}</span>`).join("")}${e.slug ? cuerpoReceta("plan", e) : ""}</div>
+      ${e.borrador ? `<button class="cambiar" onclick="cambiar(${e.id})" aria-label="Cambiar plato" title="Cambiar">↻</button>` : ""}</div>`;
+}
+
+// Las 7 filas de una semana (sin pasar del horizonte del plan). La víspera de una
+// ración del congelador lleva el aviso de pasarla al frigo.
+function htmlDias(lunes, entradas) {
+  const dias = {}, frio = {}, limite = sumaDias(PLAN.hoy, 13);
+  for (const e of entradas) (dias[e.fecha] ??= []).push(e);
+  for (const e of PLAN.semana) if (e.del_congelador) (frio[sumaDias(e.fecha, -1)] ??= []).push(e);
+  const hecho = e => PLAN.descongelar.some(d => d.fecha === e.fecha && d.tipo === e.tipo && d.descongelado);
+  const filas = [];
+  for (let i = 0; i < 7; i++) {
+    const f = sumaDias(lunes, i);
+    if (f > limite) break;
+    const es = (dias[f] || []).sort((a, b) => (a.tipo === "lunch" ? 0 : 1) - (b.tipo === "lunch" ? 0 : 1));
+    const avisos = f < PLAN.hoy ? "" : (frio[f] || []).map(e => hecho(e)
+      ? `<div class="aviso-frio hecho">✓ ${esc(e.titulo)} ya está en el frigo</div>`
+      : `<div class="aviso-frio"><span>❄</span><span>${f === PLAN.hoy ? "Esta noche" : "Por la noche"}: pasa al frigo ${esc(e.titulo)}</span></div>`).join("");
+    const d = new Date(f + "T12:00");
+    filas.push(`<div class="dia ${f === PLAN.hoy ? "hoy" : f < PLAN.hoy ? "pasado" : ""}">
+      <div class="d"><small>${f === PLAN.hoy ? "Hoy" : d.toLocaleDateString("es-ES", {weekday: "short"}).replace(".", "")}</small><b>${d.getDate()}</b></div>
+      <div class="comidas">${es.length ? es.map(htmlPlato).join("") : `<div class="libre">Libre</div>`}${avisos}</div></div>`);
+  }
+  return filas.join("");
+}
+
+// Un bloque por semana (esta, la que viene y, si el plan llega, la siguiente). El
+// borrador va dentro del bloque de su semana, encima de sus platos.
+function pintaSemana() {
+  const lunesHoy = lunesDe(PLAN.hoy), lunesProx = sumaDias(lunesHoy, 7);
+  const semanas = {};
+  for (const e of PLAN.semana) (semanas[lunesDe(e.fecha)] ??= []).push(e);
+  for (const l of [lunesHoy, lunesProx]) semanas[l] ??= [];
+  const titulo = l => l === lunesHoy ? "Esta semana" : l === lunesProx ? "Semana que viene" : `Semana del ${fechaDM(l)}`;
+  const borrador = PLAN.semana.filter(e => e.borrador);
+
+  $("v-semana").innerHTML = Object.keys(semanas).sort().map(l => {
+    const es = semanas[l], nb = es.filter(e => e.borrador).length;
+    let cab = "";
+    if (nb) cab = `<div class="sem-borrador"><span class="tag ahora">Borrador</span>
+        <div class="meta">${nb} ${nb === 1 ? "plato" : "platos"} por aprobar. Cambia lo que no te apetezca (↻) y aprueba:
+          hasta entonces no se guarda en Mealie.</div>
+        <div class="fila"><button class="btn prim" onclick="aprobar()">Aprobar</button>
+          <button class="btn" onclick="generarBorrador('${l}')">Regenerar</button>
+          <button class="btn" onclick="descartar(${borrador.length})">Descartar</button></div></div>`;
+    else if (!es.some(e => e.fecha >= PLAN.hoy)) cab = `<div class="sem-vacia"><div class="meta">${l === lunesProx
+        ? "Aún sin plan. El borrador se genera solo el domingo a las 9:00."
+        : "No hay nada planificado para lo que queda de semana."}</div>
+        <div class="fila"><button class="btn ${l === lunesProx ? "" : "prim"}" onclick="generarBorrador('${l}')">Generar borrador ya</button></div></div>`;
+    return `<div class="sem-h"><h3>${titulo(l)}</h3><span>${rango(l, sumaDias(l, 6))}</span></div>
+      <div class="card semana ${nb ? "borrador-card" : ""}">${cab}${es.length ? htmlDias(l, es) : ""}</div>`;
+  }).join("");
+  $("badge-semana").hidden = !borrador.length;
+}
+
+// El inventario llega con el plan; se pinta al final de la columna Compra.
+function pintaCongelador() {
+  const el = $("cg");
+  if (el && PLAN) el.innerHTML = htmlCongelador();
+}
+function htmlCongelador() {
+  const cg = PLAN.congelador || [];
+  return `<h2>Congelador</h2><div class="card congelador">${cg.length
+    ? cg.map(x => `<div class="cg-fila"><span>${esc(x.nombre)}</span>
+        <span class="cg-n"><button class="btn" onclick="ajustaCongelador('${esc(x.receta_id)}',-1)" aria-label="Una ración menos">−</button>
+        <b>${x.raciones}</b>
+        <button class="btn" onclick="ajustaCongelador('${esc(x.receta_id)}',1)" aria-label="Una ración más">+</button></span></div>`).join("")
+    : `<div class="meta">Vacío.</div>`}
+    <div class="meta cg-ayuda">Al pasar el día en que se cocina un congelable, sus raciones de más entran solas aquí,
+      y el borrador de la semana siguiente las coloca antes de sortear el resto.</div></div>`;
+}
+
+async function ajustaCongelador(receta, delta) {
+  try { await api(`/api/congelador/${encodeURIComponent(receta)}`, {method: "POST", body: JSON.stringify({delta})}); await cargaPlan(); }
+  catch (e) { fallo(e); }
+}
+
+async function generarBorrador(lunes) {
+  toast("Generando…");
+  try {
+    const r = await api("/api/borrador/generar", {method: "POST", body: JSON.stringify({lunes})});
+    await cargaPlan(); toast(`Borrador listo: ${r.creadas} platos`);
+  } catch (e) { fallo(e); }
+}
+
+async function cambiar(id) {
+  try { await api(`/api/borrador/${id}/cambiar`, {method: "POST"}); await cargaPlan(); }
+  catch (e) { fallo(e); }
+}
+
+async function descartar(n) {
+  if (!confirm(`¿Descartar el borrador (${n} platos)? Lo ya aprobado no se toca.`)) return;
+  try { const r = await api("/api/borrador", {method: "DELETE"}); await cargaPlan(); toast(`Descartados ${r.descartadas} platos`); }
+  catch (e) { fallo(e); }
+}
+
+async function aprobar() {
+  try { const r = await api("/api/borrador/aprobar", {method: "POST"}); await cargaPlan(); toast(`Aprobado: ${r.aprobadas} platos`); }
+  catch (e) { fallo(e); }
+}
+
+async function cargaPlan() {
+  try {
+    PLAN = await api("/api/plan");
+    $("fecha").textContent = fechaLarga(PLAN.hoy);
+    pintaHoy(); pintaSemana(); pintaCongelador();
+  } catch (e) {
+    $("v-hoy").innerHTML = $("v-semana").innerHTML =
+      `<div class="card vacio">No se pudo leer el plan de Mealie.<br><small>${esc(e.message.slice(0, 120))}</small></div>`;
+  }
+}
+
+async function posponer(id, dias) {
+  try {
+    const r = await api(`/api/plan/${id}/posponer`, {method: "POST", body: JSON.stringify({dias})});
+    await cargaPlan();
+    if (dias > 0) toast(`Pospuesto ${dias === 1 ? "un día" : dias + " días"} (${r.movidas.length} ${r.movidas.length === 1 ? "plato" : "platos"})`,
+                        () => posponer(id, -dias));
+    else toast("Deshecho");
+  } catch (e) { fallo(e); }
+}
+
+/* --- Receta dentro del panel (plegada hasta que se abre) ------------------------ */
+const ABIERTAS = new Set();   // "zona|fecha|tipo|slug" desplegadas (zona: hoy o plan) (solo en memoria: al recargar, plegadas)
+const RECETAS = {};           // slug -> receta (o {cargando} / {error})
+let WAKE = null, WAKE_ON = false;
+
+const repinta = () => { pintaHoy(); pintaSemana(); };
+const claveTachado = (fecha, slug) => `comidas:tachado:${fecha}:${slug}`;
+function leeTachado(fecha, slug) {
+  try { return JSON.parse(localStorage.getItem(claveTachado(fecha, slug))) || {i: [], p: []}; }
+  catch { return {i: [], p: []}; }
+}
+function tachar(fecha, slug, lista, n) {
+  const t = leeTachado(fecha, slug), set = new Set(t[lista]);
+  set.has(n) ? set.delete(n) : set.add(n);
+  t[lista] = [...set];
+  try { localStorage.setItem(claveTachado(fecha, slug), JSON.stringify(t)); } catch {}
+  repinta();
+}
+
+const claveReceta = (zona, e) => `${zona}|${e.fecha}|${e.tipo}|${e.slug}`;
+const abreReceta = (zona, e) => `toggleReceta('${zona}','${e.fecha}','${e.tipo}','${esc(e.slug)}')`;
+
+function htmlReceta(e) {
+  const abierta = ABIERTAS.has(claveReceta("hoy", e));
+  return `<button class="desplegar" onclick="${abreReceta("hoy", e)}"
+      aria-expanded="${abierta}">${abierta ? "Ocultar receta ▴" : "Ver receta ▾"}</button>` + cuerpoReceta("hoy", e);
+}
+
+// Ingredientes y pasos para ir tachando; vacío si la receta está plegada en esa zona.
+function cuerpoReceta(zona, e) {
+  if (!ABIERTAS.has(claveReceta(zona, e))) return "";
+  const r = RECETAS[e.slug];
+  if (!r || r.cargando) return `<div class="receta"><div class="meta">Cargando…</div></div>`;
+  if (r.error) return `<div class="receta"><div class="meta">No se pudo leer la receta.</div></div>`;
+  const t = leeTachado(e.fecha, e.slug), ti = new Set(t.i), tp = new Set(t.p);
+  const meta = [r.raciones && `${r.raciones} raciones`, r.preparacion && `preparación ${r.preparacion}`,
+                r.coccion && `cocción ${r.coccion}`].filter(Boolean).join(" · ");
+  const ings = r.ingredientes.map((i, n) => !i.texto && i.titulo
+    ? `<li class="sec">${esc(i.titulo)}</li>`
+    : `<li class="${ti.has(n) ? "tachado" : ""}" onclick="tachar('${e.fecha}','${esc(e.slug)}','i',${n})">${esc(i.texto)}</li>`).join("");
+  const pasos = r.pasos.map((p, n) => `<li class="${tp.has(n) ? "tachado" : ""}" onclick="tachar('${e.fecha}','${esc(e.slug)}','p',${n})">
+      ${p.titulo ? `<b>${esc(p.titulo)}</b> ` : ""}${esc(p.texto)}</li>`).join("");
+  return `<div class="receta">
+      ${meta ? `<div class="meta">${esc(meta)}</div>` : ""}
+      ${"wakeLock" in navigator ? `<label class="wake"><input type="checkbox" ${WAKE_ON ? "checked" : ""}
+        onchange="pantallaEncendida(this.checked)"> Mantener la pantalla encendida</label>` : ""}
+      ${r.comentarios.length ? `<h4>Tus notas</h4><ul class="notas">${r.comentarios.map(n =>
+        `<li><span class="meta">${fechaDM(n.fecha)}</span> ${esc(n.texto)}</li>`).join("")}</ul>` : ""}
+      <h4>Ingredientes</h4><ul class="ings">${ings}</ul>
+      <h4>Pasos</h4><ol class="pasos">${pasos}</ol>
+      ${r.notas.map(n => `<div class="meta"><b>${esc(n.titulo || "Nota")}:</b> ${esc(n.texto)}</div>`).join("")}
+      <div class="meta"><a href="${esc(r.url)}" target="_blank" rel="noopener">Abrir en Mealie ↗</a></div></div>`;
+}
+
+/* --- Notas de "cómo salió" (comentarios de la receta en Mealie) ------------------- */
+let NOTA_ABIERTA = null;   // "fecha|tipo" con el campo de nota desplegado
+let NOTA_TXT = "";         // lo escrito, para no perderlo si la tarjeta se repinta
+
+function htmlNota(e) {
+  const k = `${e.fecha}|${e.tipo}`;
+  if (NOTA_ABIERTA !== k) return `<button class="enlace nota-btn" onclick="abrirNota('${k}')">＋ Añadir nota</button>`;
+  return `<form class="anadir nota-form" onsubmit="guardarNota(event,'${esc(e.slug)}')">
+      <input id="nota-txt" placeholder="¿Qué cambiarías? (p. ej. menos sal)" maxlength="500" autocomplete="off"
+        enterkeyhint="done" value="${esc(NOTA_TXT)}" oninput="NOTA_TXT=this.value">
+      <button class="btn prim">Guardar</button><button type="button" class="btn" onclick="abrirNota(null)">✕</button></form>`;
+}
+function abrirNota(k) {
+  NOTA_ABIERTA = k; NOTA_TXT = ""; pintaHoy();
+  if (k) $("nota-txt")?.focus();
+}
+async function guardarNota(ev, slug) {
+  ev.preventDefault();
+  const texto = $("nota-txt").value.trim();
+  if (!texto) return;
+  try {
+    await api(`/api/recetas/${encodeURIComponent(slug)}/nota`, {method: "POST", body: JSON.stringify({texto})});
+    NOTA_ABIERTA = null; NOTA_TXT = ""; toast("Nota guardada en la receta");
+    // "Ver receta" la recarga con la nota nueva (si está abierta, ya; si no, al abrirla).
+    if ([...ABIERTAS].some(k => k.endsWith(`|${slug}`))) {
+      try { RECETAS[slug] = await api(`/api/recetas/${encodeURIComponent(slug)}`); } catch { delete RECETAS[slug]; }
+    } else delete RECETAS[slug];
+    repinta();
+  } catch (e) { fallo(e); }
+}
+
+async function toggleReceta(zona, fecha, tipo, slug) {
+  const k = `${zona}|${fecha}|${tipo}|${slug}`;
+  if (ABIERTAS.has(k)) {
+    ABIERTAS.delete(k);
+    if (!ABIERTAS.size) pantallaEncendida(false);
+    repinta(); return;
+  }
+  ABIERTAS.add(k);
+  if (!RECETAS[slug] || RECETAS[slug].error) {
+    RECETAS[slug] = {cargando: true}; repinta();
+    try { RECETAS[slug] = await api(`/api/recetas/${encodeURIComponent(slug)}`); }
+    catch { RECETAS[slug] = {error: true}; }
+  }
+  repinta();
+}
+
+async function pantallaEncendida(on) {
+  WAKE_ON = on;
+  try {
+    if (on && !WAKE) { WAKE = await navigator.wakeLock.request("screen"); WAKE.addEventListener("release", () => { WAKE = null; }); }
+    if (!on && WAKE) { await WAKE.release(); WAKE = null; }
+  } catch { WAKE_ON = false; toast("Este navegador no deja mantener la pantalla encendida"); }
+  repinta();
+}
+// El sistema suelta el bloqueo al cambiar de app: se recupera al volver.
+document.addEventListener("visibilitychange", () => { if (!document.hidden && WAKE_ON && !WAKE) pantallaEncendida(true); });
+
+async function descongelado(fecha, tipo, hecho) {
+  try {
+    await api("/api/descongelado", {method: "POST", body: JSON.stringify({fecha, tipo, hecho})});
+    for (const e of PLAN.descongelar) if (e.fecha === fecha && e.tipo === tipo) e.descongelado = hecho;
+    repinta();
+  } catch (e) { fallo(e); }
+}
+
+async function valorar(slug, n) {
+  try {
+    await api(`/api/recetas/${encodeURIComponent(slug)}/valoracion`, {method: "POST", body: JSON.stringify({estrellas: n})});
+    for (const e of [...PLAN.comidas_hoy, ...PLAN.por_valorar, ...PLAN.semana]) if (e.slug === slug) e.estrellas = n;
+    repinta(); toast(`Valorada con ${n} ★`);
+  } catch (e) { fallo(e); }
+}
+
+/* --- Compra ----------------------------------------------------------------- */
+function pintaCompra() {
+  const pend = COMPRA.items.filter(i => !i.hecho), hechos = COMPRA.items.filter(i => i.hecho);
+  $("badge").hidden = !pend.length; $("badge").textContent = pend.length;
+  const fila = i => `<label class="item ${i.hecho ? "hecho" : ""}"><input type="checkbox" ${i.hecho ? "checked" : ""}
+      onchange="marcar('${esc(i.id)}',this.checked)"><span>${esc(i.texto)}</span></label>`;
+  $("v-compra").innerHTML = `<div id="prep">${htmlPrep()}</div>
+    <form class="anadir" onsubmit="anadir(event)"><input id="nuevo" placeholder="Añadir algo…" autocomplete="off" enterkeyhint="done">
+      <button class="btn prim">Añadir</button></form>
+    <p class="resumen">${pend.length ? `${pend.length} por comprar` : "Nada pendiente"}</p>
+    ${pend.length ? `<div class="card lista">${pend.map(fila).join("")}</div>` : ""}
+    ${hechos.length ? `<div class="carro-h"><h2>En el carro</h2>
+      <button class="btn" onclick="vaciarComprados(${hechos.length})">Vaciar comprados</button></div>
+      <div class="card lista">${hechos.map(fila).join("")}</div>` : ""}
+    <div id="cg"></div>`;
+  pintaCongelador();
+}
+
+/* --- Ingredientes del plan → compra ------------------------------------------- */
+let PREP = null;   // null = cerrado; {cargando} | datos de /api/compra/plan
+const MOTIVO = i => i.en_lista ? "ya en la lista" : i.basico ? "despensa" : i.opcional ? "opcional" : "";
+
+function htmlPrep() {
+  if (!PREP) return `<div class="card prep-cta"><div><b>Ingredientes del plan</b>
+      <div class="meta">Los de los próximos 7 días, juntados y listos para revisar.</div></div>
+      <button class="btn" onclick="abrirPrep()">Preparar compra</button></div>`;
+  if (PREP.cargando) return `<div class="card vacio">Leyendo las recetas…</div>`;
+  const p = PREP;
+  if (!p.platos.length) return `<div class="card prep-cta"><div class="meta">${p.ya_hechos
+      ? "Los ingredientes de los próximos 7 días ya están en la lista."
+      : "No hay platos aprobados en los próximos 7 días."}</div>
+      <button class="btn" onclick="cerrarPrep()">Cerrar</button></div>`;
+  const fila = (i, n) => `<label class="item ${i.marcado ? "" : "apagado"}">
+      <input type="checkbox" ${i.marcado ? "checked" : ""} onchange="PREP.items[${n}].marcado=this.checked;pintaPrep()">
+      <span><span class="prep-n">${esc(i.texto)}</span>${MOTIVO(i) ? ` <span class="tag">${MOTIVO(i)}</span>` : ""}
+      <small class="prep-r">${esc(i.recetas.join(" · "))}</small></span></label>`;
+  const idx = p.items.map((i, n) => [i, n]);
+  const sel = p.items.filter(i => i.marcado).length;
+  return `<div class="card prep">
+      <div class="prep-h"><b>Compra de ${p.platos.length} ${p.platos.length === 1 ? "plato" : "platos"}</b>
+        <span class="meta">del ${fechaDM(p.desde)} al ${fechaDM(p.hasta)}${p.ya_hechos ? ` · ${p.ya_hechos} ya pasados` : ""}</span></div>
+      <div class="lista">${idx.filter(([i]) => !MOTIVO(i)).map(([i, n]) => fila(i, n)).join("")}</div>
+      ${idx.some(([i]) => MOTIVO(i)) ? `<div class="prep-sub">Probablemente ya lo tienes</div>
+        <div class="lista">${idx.filter(([i]) => MOTIVO(i)).map(([i, n]) => fila(i, n)).join("")}</div>` : ""}
+      <div class="fila"><button class="btn prim" onclick="pasarACompra()" ${sel ? "" : "disabled"}>Añadir ${sel} a la lista</button>
+        <button class="btn" onclick="cerrarPrep()">Cancelar</button></div></div>`;
+}
+function pintaPrep() { const el = $("prep"); if (el) el.innerHTML = htmlPrep(); }
+function cerrarPrep() { PREP = null; pintaPrep(); }
+
+async function abrirPrep() {
+  PREP = {cargando: true}; pintaPrep();
+  try { PREP = await api("/api/compra/plan"); pintaPrep(); }
+  catch (e) { PREP = null; pintaPrep(); fallo(e); }
+}
+
+async function pasarACompra() {
+  const textos = PREP.items.filter(i => i.marcado).map(i => i.texto);
+  const platos = PREP.platos.map(p => [p.fecha, p.tipo, p.receta_id]);
+  try {
+    const r = await api("/api/compra/plan", {method: "POST", body: JSON.stringify({textos, platos})});
+    PREP = null; await cargaCompra(); toast(`Añadidos ${r.anadidos} a la lista`);
+  } catch (e) { fallo(e); }
+}
+
+async function vaciarComprados(n) {
+  if (!confirm(`¿Borrar ${n} ${n === 1 ? "elemento comprado" : "elementos comprados"} de la lista? También desaparecen del móvil.`)) return;
+  try { await api("/api/compra/comprados", {method: "DELETE"}); await cargaCompra(); toast("Comprados borrados"); }
+  catch (e) { fallo(e); }
+}
+
+async function cargaCompra() {
+  try { COMPRA = await api("/api/compra"); pintaCompra(); }
+  catch (e) { $("v-compra").innerHTML = `<div class="card vacio">No se pudo leer la lista de la compra.</div><div id="cg"></div>`; pintaCongelador(); }
+}
+
+async function marcar(id, hecho) {
+  const i = COMPRA.items.find(x => x.id === id); i.hecho = hecho; pintaCompra();
+  try { await api(`/api/compra/${id}`, {method: "PUT", body: JSON.stringify({hecho})}); }
+  catch (e) { i.hecho = !hecho; pintaCompra(); fallo(e); }
+}
+
+async function anadir(ev) {
+  ev.preventDefault();
+  const texto = $("nuevo").value.trim();
+  if (!texto) return;
+  try { await api("/api/compra", {method: "POST", body: JSON.stringify({texto})}); await cargaCompra(); $("nuevo").focus(); }
+  catch (e) { fallo(e); }
+}
+
+/* --- Arranque ---------------------------------------------------------------- */
+const inicial = TITULOS[location.hash.slice(1)] ? location.hash.slice(1) : "hoy";
+cargaPlan(); vista(inicial);
+if (inicial !== "compra") cargaCompra();   // para el badge de la pestaña
+addEventListener("hashchange", () => { const v = location.hash.slice(1); if (TITULOS[v]) vista(v); });
+// Al volver a la pestaña del navegador (móvil en reposo), refresca.
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { cargaPlan(); cargaCompra(); } });
+</script>
+</body>
+</html>

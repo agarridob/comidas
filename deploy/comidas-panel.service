@@ -1,0 +1,18 @@
+[Unit]
+Description=comidas: panel (FastAPI sobre Mealie)
+After=network.target mealie.service
+Wants=mealie.service
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/comidas
+EnvironmentFile=/opt/comidas/.env
+# Base de datos del panel: /var/lib/comidas/comidas.db (systemd crea el directorio como www-data).
+StateDirectory=comidas
+ExecStart=/opt/comidas/.venv/bin/uvicorn panel.app:app --host 0.0.0.0 --port 8000 --proxy-headers
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

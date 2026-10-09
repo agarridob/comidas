@@ -1,0 +1,24 @@
+# Secretos — NUNCA al control de versiones
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# SO / editor
+.DS_Store
+.idea/
+.vscode/
+uv.lock
+
+# Notas privadas (infraestructura, datos propios)
+docs/privado/
