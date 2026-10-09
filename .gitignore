@@ -22,3 +22,6 @@ uv.lock
 
 # Notas privadas (infraestructura, datos propios)
 docs/privado/
+
+# Configuración local de Claude Code (lanzador de la demo)
+.claude/
