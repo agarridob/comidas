@@ -10,6 +10,16 @@ qué se come hoy, qué hay que descongelar, el plan de la semana y la lista de l
 
 Inspirado en [Supper-Board](https://github.com/weezerhunter/Supper-Board).
 
+<p>
+  <img src="docs/capturas/movil-hoy.png" width="32%" alt="Hoy en el móvil">
+  <img src="docs/capturas/movil-plan.png" width="32%" alt="Plan en el móvil">
+  <img src="docs/capturas/movil-compra.png" width="32%" alt="Compra en el móvil">
+</p>
+
+![En escritorio: Hoy, Plan y Compra en tres columnas](docs/capturas/escritorio.png)
+
+<sub>Capturas con datos de ejemplo (`demo/`).</sub>
+
 ## Qué hace
 
 **Hoy**
@@ -120,6 +130,15 @@ Documentación interactiva en `/api/docs`.
 python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 .venv/bin/pytest -q
 ```
+
+Para probar el panel sin Mealie ni Home Assistant, con recetas inventadas, en http://127.0.0.1:8765:
+
+```bash
+.venv/bin/python -m demo.servidor
+```
+
+Con la demo en marcha, `node demo/capturas.mjs docs/capturas http://127.0.0.1:8765` rehace las capturas de móvil
+(necesita Chrome).
 
 ## Despliegue
 
