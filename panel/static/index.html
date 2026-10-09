@@ -39,11 +39,16 @@
   main{max-width:640px;margin:0 auto;padding:1.25rem 1rem calc(6rem + env(safe-area-inset-bottom))}
 
   /* --- Cabecera --------------------------------------------------------------- */
-  /* Mantel de vichy: dos bandas cruzadas semitransparentes del acento. */
-  .franja{height:14px;border-radius:4px;margin-bottom:1.1rem;opacity:.85;
+  /* Ribete de mantel: tramos de vichy (dos bandas cruzadas semitransparentes del acento)
+     alternados con emojis de comida en silueta del mismo color (texto transparente +
+     text-shadow). Arriba en la cabecera y abajo cerrando la página. */
+  .franja{display:flex;align-items:center;gap:10px;margin-bottom:1.1rem;opacity:.85}
+  .franja i{flex:1;height:14px;border-radius:4px;
     background:
       repeating-linear-gradient(90deg,color-mix(in srgb,var(--accent) 55%,transparent) 0 7px,transparent 7px 14px),
       repeating-linear-gradient(0deg,color-mix(in srgb,var(--accent) 55%,transparent) 0 7px,transparent 7px 14px)}
+  .franja b{font-size:24px;font-weight:400;line-height:1;color:transparent;text-shadow:0 0 0 var(--accent)}
+  .franja.pie{margin:1.6rem 0 0}
   .fecha{color:var(--muted);font-size:.78rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
   h1{font-family:var(--serif);font-size:2.1rem;line-height:1.1;margin:.15rem 0 1.1rem}
   h2{font-family:var(--serif);font-size:1.2rem;margin:1.6rem 0 .6rem}
@@ -232,7 +237,7 @@
   @media (min-width:1024px){
     main{max-width:1440px;padding:2rem 2rem 3rem;display:grid;gap:0 1.6rem;align-items:start;
       grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,.9fr)}
-    .cab{grid-column:1 / -1}
+    .cab,.franja.pie{grid-column:1 / -1}
     .col[hidden]{display:block}
     .col-h{display:block;font-family:var(--serif);font-size:1.3rem;margin:0 0 .8rem;padding-bottom:.5rem;
       border-bottom:1px solid var(--line2)}
@@ -249,7 +254,7 @@
 <body>
 <main>
   <header class="cab">
-    <div class="franja"></div>
+    <div class="franja" aria-hidden="true"><i></i><b>🥦</b><i></i><b>🍗</b><i></i><b>🧀</b><i></i><b>🥖</b><i></i></div>
     <div class="fecha" id="fecha"></div>
     <h1><span class="solo-movil" id="titulo">Hoy</span><span class="solo-escritorio">Comidas</span></h1>
   </header>
@@ -257,6 +262,7 @@
     <section id="v-hoy"><div class="vacio">Cargando…</div></section></div>
   <div class="col" id="c-semana" hidden><h2 class="col-h">Plan</h2><section id="v-semana"></section></div>
   <div class="col" id="c-compra" hidden><h2 class="col-h">Compra</h2><section id="v-compra"></section></div>
+  <div class="franja pie" aria-hidden="true"><i></i><b>🥕</b><i></i><b>🐟</b><i></i><b>🧄</b><i></i><b>🌶️</b><i></i></div>
 </main>
 
 <nav class="tabs"><div class="in">

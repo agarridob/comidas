@@ -1,4 +1,4 @@
-// Capturas de móvil del README por CDP (Chrome headless con viewport de móvil de verdad).
+// Capturas del README (móvil y escritorio) por CDP (Chrome headless con viewport de móvil de verdad).
 // Uso, con `python -m demo.servidor` en marcha: node demo/capturas.mjs docs/capturas http://127.0.0.1:8765
 import { spawn } from "node:child_process";
 import { writeFileSync, mkdtempSync } from "node:fs";
@@ -27,4 +27,10 @@ for (const [vista, alto] of [["hoy", 844], ["semana", 844], ["compra", 844]]) {
   const { data } = await cdp("Page.captureScreenshot", { format: "png", clip: { x: 0, y: 0, width: 390, height: alto, scale: 1 } });
   writeFileSync(join(salida, `movil-${vista === "semana" ? "plan" : vista}.png`), Buffer.from(data, "base64"));
 }
+await cdp("Emulation.setDeviceMetricsOverride", { width: 1400, height: 1000, deviceScaleFactor: 1.5, mobile: false });
+await cdp("Page.navigate", { url: "about:blank" }); await espera(300);
+await cdp("Page.navigate", { url: `${base}/` });
+await espera(2500);
+const { data } = await cdp("Page.captureScreenshot", { format: "png", clip: { x: 0, y: 0, width: 1400, height: 1000, scale: 1 } });
+writeFileSync(join(salida, "escritorio.png"), Buffer.from(data, "base64"));
 ws.close(); chrome.kill();

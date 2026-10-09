@@ -137,7 +137,7 @@ Para probar el panel sin Mealie ni Home Assistant, con recetas inventadas, en ht
 .venv/bin/python -m demo.servidor
 ```
 
-Con la demo en marcha, `node demo/capturas.mjs docs/capturas http://127.0.0.1:8765` rehace las capturas de móvil
+Con la demo en marcha, `node demo/capturas.mjs docs/capturas http://127.0.0.1:8765` rehace las capturas
 (necesita Chrome).
 
 ## Despliegue
