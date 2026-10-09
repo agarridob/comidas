@@ -149,3 +149,7 @@ Generar el borrador a mano (o simular sin escribir con `--simular`):
 ```bash
 sudo -u www-data bash -c 'set -a; . /opt/comidas/.env; cd /opt/comidas && .venv/bin/python -m panel.generar --lunes 2026-10-12'
 ```
+
+## Licencia
+
+[MIT](LICENSE).
