@@ -112,7 +112,7 @@ class MealieDemo:
                 self.del_congelador.append((str(fecha), "dinner", r(cena)["id"]))
 
     def _crea(self, fecha: dt.date | str, tipo: str, receta_id: str, texto: str = "") -> dict:
-        id_ = len(self.plan) + 1
+        id_ = max(self.plan, default=0) + 1
         receta = next(r for r, _ in self.recetas.values() if r["id"] == receta_id)
         self.plan[id_] = {"id": id_, "date": str(fecha), "entryType": tipo, "title": "", "text": texto,
                           "recipeId": receta_id, "recipe": receta, "groupId": "g", "userId": "u", "householdId": "h"}
@@ -129,6 +129,8 @@ class MealieDemo:
             return httpx.Response(200, json={"items": es, "total_pages": 1})
         if p.startswith("/api/households/mealplans/"):
             id_ = int(p.rsplit("/", 1)[1])
+            if m == "DELETE":
+                return httpx.Response(200, json=self.plan.pop(id_))
             if m == "PUT":
                 self.plan[id_]["date"] = json.loads(req.content)["date"]
             return httpx.Response(200, json=self.plan[id_])

@@ -37,6 +37,9 @@ Inspirado en [Supper-Board](https://github.com/weezerhunter/Supper-Board).
 
 **Plan**
 - **Esta semana** y **Semana que viene**, una fila por día de lunes a domingo. Tocar un plato despliega su receta.
+- **✕ Quitar** un plato (del borrador o ya aprobado) deja su hueco **libre**, para festivos o días que se come
+  fuera, con Deshacer. El borrador no rellena los huecos libres, ni al regenerar; **＋** vuelve a sortear un plato
+  para ese hueco. Si era una ración del congelador, se queda congelada para otra semana.
 - El borrador semanal va dentro de su semana (ver abajo).
 
 **Compra**
@@ -97,7 +100,7 @@ recetas las carga el navegador directamente de `MEALIE_PUBLIC_URL` (los medios d
 | `panel/mealie.py` | Cliente de la API de Mealie + lógica pura (posponer, etiquetas) |
 | `panel/ha.py` | Lista de la compra vía servicios `todo.*` de HA y avisos vía `notify.*` |
 | `panel/avisos.py` | Avisos: descongelar (21:00) y borrador nuevo |
-| `panel/db.py` | SQLite del panel: borrador, descongelado, compra hecha e inventario del congelador |
+| `panel/db.py` | SQLite del panel: borrador, huecos libres, descongelado, compra hecha e inventario del congelador |
 | `panel/ingredientes.py` | Parser de ingredientes en castellano y agregado entre recetas |
 | `panel/generar.py`, `panel/config.py` | Borrador semanal (sorteo, cambiar, aprobar) y su configuración |
 | `panel/static/index.html` | Todo el frontend (HTML/CSS/JS sin dependencias) |
@@ -117,6 +120,8 @@ recetas las carga el navegador directamente de `MEALIE_PUBLIC_URL` (los medios d
 | `POST /api/recetas/{slug}/nota` `{texto}` | Nota de "cómo salió" |
 | `POST /api/borrador/generar` `{lunes?}` | Genera o regenera el borrador |
 | `POST /api/borrador/{id}/cambiar` | Sortea otra receta para ese plato |
+| `POST /api/borrador/{id}/quitar`, `POST /api/plan/{id}/quitar` | Quita un plato del borrador o de Mealie y deja el hueco libre |
+| `POST /api/huecos/poner` `{fecha, tipo, receta_id?…}` | Vuelve a ocupar un hueco libre: deshace un Quitar o sortea un plato al borrador |
 | `POST /api/borrador/aprobar`, `DELETE /api/borrador` | Aprueba (crea en Mealie) o descarta el borrador |
 | `GET/POST /api/compra`, `PUT /api/compra/{uid}` | Leer, añadir y marcar en la lista de HA |
 | `GET/POST /api/compra/plan` | Vista previa de "Preparar compra" y añadir lo marcado |

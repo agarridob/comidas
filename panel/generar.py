@@ -3,7 +3,8 @@
 El borrador vive en la base de datos del panel (panel/db.py), no en Mealie: el plan
 de Mealie solo contiene lo aprobado. El panel muestra el borrador mezclado con el
 plan; "Cambiar" sortea otra receta para un hueco y "Aprobar" crea las entradas en
-Mealie y vacía el borrador.
+Mealie y vacía el borrador. "Quitar" deja un hueco libre (festivo, se come fuera…),
+del borrador o de lo aprobado, y el borrador ya no lo rellena.
 
 Uso (en el servidor; lo lanza el timer del domingo):
     python -m panel.generar               # semana que empieza el próximo lunes
@@ -216,12 +217,12 @@ def genera(m: Mealie, c: sqlite3.Connection, lunes: dt.date, hoy: dt.date,
     """Genera (o regenera) el borrador de la semana de `lunes` en la base de datos.
     Primero coloca lo que hay en el congelador; el resto se sortea. Lo ya aprobado (en
     Mealie) se respeta y cuenta para las reglas; el borrador anterior de esa semana se
-    sustituye."""
+    sustituye. Los huecos quitados a mano se quedan libres."""
     rng = rng or random.Random()
     sincroniza(m, c, hoy)
     aprobadas = m.plan(*_semana(lunes))
     db.borra_borrador(c, *_semana(lunes))
-    ocupados = {(e["date"], e["entryType"]) for e in aprobadas}
+    ocupados = {(e["date"], e["entryType"]) for e in aprobadas} | db.huecos_libres(c, *_semana(lunes))
     libres = [(f, t) for f, t in huecos(lunes, hoy) if (f.isoformat(), t) not in ocupados]
 
     recetas = m.recetas()
@@ -249,20 +250,75 @@ def cambia(m: Mealie, c: sqlite3.Connection, borrador_id: int, rng: random.Rando
     fila = db.borrador_uno(c, borrador_id)
     if fila is None:
         return None
-    fecha = dt.date.fromisoformat(fila["fecha"])
-    lunes = fecha - dt.timedelta(days=fecha.weekday())
-    recetas = m.recetas()
-    por_id = {r["id"]: r for r in recetas}
-    ids = [e.get("recipeId") for e in m.plan(*_semana(lunes))]
-    ids += [b["receta_id"] for b in db.borrador(c, *_semana(lunes)) if b["id"] != borrador_id]
-    resto = [por_id[i] for i in ids if i in por_id]
-    # La receta actual cuenta como "reciente" para que no vuelva a salir.
-    recientes = _recientes(m, lunes) | {fila["receta_id"]}
-    nueva = elige(recetas, [fila["tipo"]], resto, recientes, rng)[0]
+    nueva = _sortea_hueco(m, c, dt.date.fromisoformat(fila["fecha"]), fila["tipo"], rng,
+                          sin_borrador=borrador_id, evita=fila["receta_id"])
     if nueva is not None:
         db.cambia_borrador(c, borrador_id, nueva["id"])
         fila.update(receta_id=nueva["id"], congelador=0)
     return fila
+
+
+def _sortea_hueco(m: Mealie, c: sqlite3.Connection, fecha: dt.date, tipo: str, rng: random.Random, *,
+                  sin_borrador: int | None = None, evita: str | None = None) -> dict | None:
+    """Una receta para un hueco, respetando el resto de su semana (lo aprobado en Mealie
+    y el borrador, salvo la fila `sin_borrador`). `evita` cuenta como reciente."""
+    lunes = fecha - dt.timedelta(days=fecha.weekday())
+    recetas = m.recetas()
+    por_id = {r["id"]: r for r in recetas}
+    ids = [e.get("recipeId") for e in m.plan(*_semana(lunes))]
+    ids += [b["receta_id"] for b in db.borrador(c, *_semana(lunes)) if b["id"] != sin_borrador]
+    resto = [por_id[i] for i in ids if i in por_id]
+    recientes = _recientes(m, lunes) | ({evita} if evita else set())
+    return elige(recetas, [tipo], resto, recientes, rng)[0]
+
+
+def quita_borrador(c: sqlite3.Connection, borrador_id: int) -> dict | None:
+    """Quita un plato del borrador y deja su hueco libre. Si era una ración del
+    congelador, se queda congelada para otra semana. Devuelve lo quitado (para deshacer)."""
+    fila = db.borrador_uno(c, borrador_id)
+    if fila is None:
+        return None
+    db.borra_borrador_id(c, borrador_id)
+    db.marca_libre(c, fila["fecha"], fila["tipo"], True)
+    return {"fecha": fila["fecha"], "tipo": fila["tipo"], "receta_id": fila["receta_id"],
+            "congelador": bool(fila["congelador"]), "aprobado": False}
+
+
+def quita_aprobado(m: Mealie, c: sqlite3.Connection, entrada_id: int) -> dict:
+    """Borra un plato aprobado de Mealie y deja su hueco libre. Si era una ración del
+    congelador, ya no se cuenta como comida. Devuelve lo quitado (para deshacer)."""
+    e = m.entrada(entrada_id)
+    fecha = dt.date.fromisoformat(e["date"])
+    cong = (e["date"], e["entryType"]) in db.del_congelador(c, fecha, fecha)
+    m.borra_entrada(entrada_id)
+    db.borra_del_congelador(c, e["date"], e["entryType"])
+    db.marca_libre(c, e["date"], e["entryType"], True)
+    return {"fecha": e["date"], "tipo": e["entryType"], "receta_id": e.get("recipeId"),
+            "congelador": cong, "aprobado": True}
+
+
+def pon(m: Mealie, c: sqlite3.Connection, fecha: dt.date, tipo: str, receta_id: str | None = None, *,
+        congelador: bool = False, aprobado: bool = False, rng: random.Random | None = None) -> dict | None:
+    """Vuelve a ocupar un hueco libre. Con `receta_id` (deshacer un Quitar) se repone
+    tal cual: en Mealie si estaba aprobado, en el borrador si no. Sin ella, se sortea
+    una receta y va al borrador, para aprobarla como el resto. Si el hueco ya está
+    ocupado, solo deja de estar libre. Devuelve la fila del borrador o la entrada creada."""
+    db.marca_libre(c, fecha.isoformat(), tipo, False)
+    ocupado = any(e["entryType"] == tipo for e in m.plan(fecha, fecha)) or \
+        any(b["tipo"] == tipo for b in db.borrador(c, fecha, fecha))
+    if ocupado:
+        return None
+    if receta_id and aprobado:
+        e = m.crea_entrada(fecha, tipo, receta_id, "Del congelador" if congelador else "")
+        if congelador:
+            db.marca_del_congelador(c, fecha.isoformat(), tipo, receta_id)
+        return e
+    if not receta_id:
+        nueva = _sortea_hueco(m, c, fecha, tipo, rng or random.Random())
+        if nueva is None:
+            return None
+        receta_id, congelador = nueva["id"], False
+    return db.mete_borrador(c, fecha, tipo, receta_id, congelador=congelador)
 
 
 def aprueba(m: Mealie, c: sqlite3.Connection, hoy: dt.date) -> int:

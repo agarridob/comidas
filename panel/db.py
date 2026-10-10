@@ -10,6 +10,8 @@ HA, de la lista de la compra. Aquí solo vive el estado del panel:
 - congelador:    inventario: raciones congeladas por receta.
 - del_congelador: platos del plan aprobado que son una ración del congelador.
 - procesado:     platos ya pasados por el inventario (para no contarlos dos veces).
+- hueco_libre:   huecos quitados a mano (festivo, se come fuera…): el borrador no los
+                 rellena.
 
 El fichero está en /var/lib/comidas (StateDirectory de systemd); conviene que entre
 en el backup del servidor.
@@ -65,6 +67,13 @@ CREATE TABLE IF NOT EXISTS procesado (
     tipo      TEXT NOT NULL,
     receta_id TEXT NOT NULL,
     PRIMARY KEY (fecha, tipo, receta_id)
+);
+
+-- Huecos (fecha, tipo) quitados a mano: el borrador no los rellena, ni al regenerar.
+CREATE TABLE IF NOT EXISTS hueco_libre (
+    fecha  TEXT NOT NULL,
+    tipo   TEXT NOT NULL,
+    PRIMARY KEY (fecha, tipo)
 );
 
 CREATE TABLE IF NOT EXISTS descongelado (
@@ -138,6 +147,21 @@ def borra_borrador_id(c: sqlite3.Connection, id_: int) -> None:
     c.execute("DELETE FROM borrador WHERE id = ?", (id_,))
 
 
+# --- Huecos libres -----------------------------------------------------------------
+
+def huecos_libres(c: sqlite3.Connection, desde: dt.date, hasta: dt.date) -> set[tuple[str, str]]:
+    filas = c.execute("SELECT fecha, tipo FROM hueco_libre WHERE fecha BETWEEN ? AND ?",
+                      (desde.isoformat(), hasta.isoformat()))
+    return {(f["fecha"], f["tipo"]) for f in filas}
+
+
+def marca_libre(c: sqlite3.Connection, fecha: str, tipo: str, libre: bool) -> None:
+    if libre:
+        c.execute("INSERT OR IGNORE INTO hueco_libre (fecha, tipo) VALUES (?, ?)", (fecha, tipo))
+    else:
+        c.execute("DELETE FROM hueco_libre WHERE fecha = ? AND tipo = ?", (fecha, tipo))
+
+
 # --- Descongelado -----------------------------------------------------------------
 
 def descongelados(c: sqlite3.Connection, fecha: dt.date) -> set[str]:
@@ -193,6 +217,10 @@ def del_congelador(c: sqlite3.Connection, desde: dt.date, hasta: dt.date) -> set
 
 def marca_del_congelador(c: sqlite3.Connection, fecha: str, tipo: str, receta_id: str) -> None:
     c.execute("INSERT OR REPLACE INTO del_congelador (fecha, tipo, receta_id) VALUES (?, ?, ?)", (fecha, tipo, receta_id))
+
+
+def borra_del_congelador(c: sqlite3.Connection, fecha: str, tipo: str) -> None:
+    c.execute("DELETE FROM del_congelador WHERE fecha = ? AND tipo = ?", (fecha, tipo))
 
 
 def procesados(c: sqlite3.Connection, desde: dt.date, hasta: dt.date) -> set[tuple[str, str, str]]:

@@ -83,6 +83,10 @@ class Mealie:
         r.raise_for_status()
         return r.json()
 
+    def borra_entrada(self, id_: int) -> None:
+        r = self._c.delete(f"/api/households/mealplans/{id_}")
+        r.raise_for_status()
+
     def entrada(self, id_: int) -> dict:
         return self._get(f"/api/households/mealplans/{id_}")
 

@@ -139,6 +139,7 @@ def plan() -> JSONResponse:
             frigo = db.descongelados(c, manana)
             del_cong = db.del_congelador(c, desde, hasta)
             stock = db.congelador(c)
+            libres = db.huecos_libres(c, hoy, hasta)
         crudo = [e for e in m.plan(desde, hasta) if e["entryType"] in TIPOS_PANEL]
         valoraciones = m.mis_valoraciones()
         recetas = {r["id"]: r for r in m.recetas()} if (filas or stock) else {}
@@ -154,6 +155,8 @@ def plan() -> JSONResponse:
                  for f in filas]
     entradas.sort(key=lambda e: (e["fecha"], e["tipo"] != "lunch"))
     del_dia = lambda d: [e for e in entradas if e["fecha"] == d.isoformat()]  # noqa: E731
+    # Si algo acabó en un hueco quitado (p. ej. al posponer), manda el plato.
+    libres -= {(e["fecha"], e["tipo"]) for e in entradas}
     return JSONResponse({
         "hoy": hoy.isoformat(),
         "comidas_hoy": del_dia(hoy),
@@ -161,6 +164,7 @@ def plan() -> JSONResponse:
         "descongelar": [{**e, "descongelado": e["tipo"] in frigo} for e in del_dia(manana) if e["del_congelador"]],
         # Desde el lunes de esta semana: lo ya comido se ve (atenuado) en el Plan.
         "semana": [e for e in entradas if e["fecha"] >= (hoy - dt.timedelta(days=hoy.weekday())).isoformat()],
+        "huecos_libres": [{"fecha": f, "tipo": t} for f, t in sorted(libres)],
         "congelador": sorted(
             ({"receta_id": rid, "raciones": n, "nombre": (recetas.get(rid) or {}).get("name", "¿receta borrada?"),
               "slug": (recetas.get(rid) or {}).get("slug")} for rid, n in stock.items()),
@@ -239,6 +243,40 @@ def cambia_borrador(borrador_id: int) -> dict:
         if generar.cambia(m, c, borrador_id) is None:
             raise HTTPException(404, "Ese plato ya no está en el borrador")
     return {"ok": True}
+
+
+@app.post("/api/borrador/{borrador_id}/quitar")
+def quita_borrador(borrador_id: int) -> dict:
+    """Quita un plato del borrador y deja el hueco libre (el borrador no lo rellena)."""
+    with db.conexion() as c:
+        quitado = generar.quita_borrador(c, borrador_id)
+    if quitado is None:
+        raise HTTPException(404, "Ese plato ya no está en el borrador")
+    return quitado
+
+
+@app.post("/api/plan/{entrada_id}/quitar")
+def quita_aprobado(entrada_id: int) -> dict:
+    """Borra un plato aprobado de Mealie y deja el hueco libre. Devuelve lo quitado
+    para deshacer con /api/huecos/poner."""
+    with _cliente() as m, db.conexion() as c:
+        return generar.quita_aprobado(m, c, entrada_id)
+
+
+class Poner(BaseModel):
+    fecha: dt.date
+    tipo: str = Field(pattern="^(lunch|dinner)$")
+    receta_id: str | None = None   # deshacer un Quitar; sin ella, se sortea
+    congelador: bool = False
+    aprobado: bool = False
+
+
+@app.post("/api/huecos/poner")
+def pon_hueco(p: Poner) -> dict:
+    """Vuelve a ocupar un hueco libre: deshace un Quitar o sortea un plato al borrador."""
+    with _cliente() as m, db.conexion() as c:
+        r = generar.pon(m, c, p.fecha, p.tipo, p.receta_id, congelador=p.congelador, aprobado=p.aprobado)
+    return {"puesto": r is not None}
 
 
 @app.post("/api/borrador/aprobar")

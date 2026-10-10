@@ -178,6 +178,9 @@
   .dia .e .cambiar{flex:0 0 auto;background:none;border:1px dashed var(--line2);border-radius:8px;
     color:var(--accent);font-size:1rem;line-height:1;width:34px;height:34px;cursor:pointer}
   .dia .e .cambiar:hover{border-color:var(--accent)}
+  .dia .e .acc{flex:0 0 auto;display:flex;gap:.3rem}
+  .dia .e .quitar{color:var(--muted)}
+  .dia .e.hueco .t{color:var(--muted);font-weight:500}
   .borrador-card{border:1.5px dashed var(--accent)}
   .sem-h{display:flex;align-items:baseline;justify-content:space-between;gap:.8rem;margin:1.4rem 0 .5rem}
   .sem-h:first-child{margin-top:0}
@@ -335,7 +338,8 @@ function pintaHoy() {
     const es = p.comidas_hoy.filter(e => e.tipo === t), hero = n === 0;
     const tag = `<span class="tag ${hero ? "ahora" : ""}">${TIPO[t]}</span>`;
     if (!es.length) {
-      h.push(`<div class="card compacta">${tag}<div class="meta" style="margin-top:.6rem">Nada planificado.</div></div>`);
+      const libre = esLibre(p.hoy, t) ? "Libre: hoy no se cocina." : "Nada planificado.";
+      h.push(`<div class="card compacta">${tag}<div class="meta" style="margin-top:.6rem">${libre}</div></div>`);
       return;
     }
     for (const e of es) h.push(`<div class="card ${hero ? "hero" : "compacta"}">
@@ -406,8 +410,17 @@ function htmlPlato(e) {
         : `<div class="t">${esc(e.titulo)}</div>`}
       <div class="info">${info}</div>${(e.notas_receta || []).map(n =>
         `<span class="nota-receta">📝 ${fechaDM(n.fecha)}: ${esc(n.texto)}</span>`).join("")}${e.slug ? cuerpoReceta("plan", e) : ""}</div>
-      ${e.borrador ? `<button class="cambiar" onclick="cambiar(${e.id})" aria-label="Cambiar plato" title="Cambiar">↻</button>` : ""}</div>`;
+      ${e.fecha >= PLAN.hoy && e.receta_id ? `<div class="acc">${e.borrador
+        ? `<button class="cambiar" onclick="cambiar(${e.id})" aria-label="Cambiar plato" title="Cambiar">↻</button>` : ""}
+        <button class="cambiar quitar" onclick="quitar(${e.id},${e.borrador})" aria-label="Quitar plato: ese día no se come en casa"
+          title="Quitar">✕</button></div>` : ""}</div>`;
 }
+
+// Hueco quitado a mano (festivo, se come fuera…): ＋ vuelve a sortear un plato.
+const esLibre = (fecha, tipo) => PLAN.huecos_libres.some(h => h.fecha === fecha && h.tipo === tipo);
+const htmlHueco = h => `<div class="e hueco"><div><small class="tipo">${TIPO[h.tipo]}</small><div class="t">Libre</div></div>
+    <div class="acc"><button class="cambiar" onclick="poner({fecha:'${h.fecha}',tipo:'${h.tipo}'})"
+      aria-label="Poner un plato" title="Poner un plato">＋</button></div></div>`;
 
 // Las 7 filas de una semana (sin pasar del horizonte del plan). La víspera de una
 // ración del congelador lleva el aviso de pasarla al frigo.
@@ -420,14 +433,15 @@ function htmlDias(lunes, entradas) {
   for (let i = 0; i < 7; i++) {
     const f = sumaDias(lunes, i);
     if (f > limite) break;
-    const es = (dias[f] || []).sort((a, b) => (a.tipo === "lunch" ? 0 : 1) - (b.tipo === "lunch" ? 0 : 1));
+    const huecos = f < PLAN.hoy ? [] : PLAN.huecos_libres.filter(h => h.fecha === f).map(h => ({...h, hueco: true}));
+    const es = [...(dias[f] || []), ...huecos].sort((a, b) => (a.tipo === "lunch" ? 0 : 1) - (b.tipo === "lunch" ? 0 : 1));
     const avisos = f < PLAN.hoy ? "" : (frio[f] || []).map(e => hecho(e)
       ? `<div class="aviso-frio hecho">✓ ${esc(e.titulo)} ya está en el frigo</div>`
       : `<div class="aviso-frio"><span>❄</span><span>${f === PLAN.hoy ? "Esta noche" : "Por la noche"}: pasa al frigo ${esc(e.titulo)}</span></div>`).join("");
     const d = new Date(f + "T12:00");
     filas.push(`<div class="dia ${f === PLAN.hoy ? "hoy" : f < PLAN.hoy ? "pasado" : ""}">
       <div class="d"><small>${f === PLAN.hoy ? "Hoy" : d.toLocaleDateString("es-ES", {weekday: "short"}).replace(".", "")}</small><b>${d.getDate()}</b></div>
-      <div class="comidas">${es.length ? es.map(htmlPlato).join("") : `<div class="libre">Libre</div>`}${avisos}</div></div>`);
+      <div class="comidas">${es.length ? es.map(e => e.hueco ? htmlHueco(e) : htmlPlato(e)).join("") : `<div class="libre">Libre</div>`}${avisos}</div></div>`);
   }
   return filas.join("");
 }
@@ -438,6 +452,7 @@ function pintaSemana() {
   const lunesHoy = lunesDe(PLAN.hoy), lunesProx = sumaDias(lunesHoy, 7);
   const semanas = {};
   for (const e of PLAN.semana) (semanas[lunesDe(e.fecha)] ??= []).push(e);
+  for (const h of PLAN.huecos_libres) semanas[lunesDe(h.fecha)] ??= [];
   for (const l of [lunesHoy, lunesProx]) semanas[l] ??= [];
   const titulo = l => l === lunesHoy ? "Esta semana" : l === lunesProx ? "Semana que viene" : `Semana del ${fechaDM(l)}`;
   const borrador = PLAN.semana.filter(e => e.borrador);
@@ -456,7 +471,8 @@ function pintaSemana() {
         : "No hay nada planificado para lo que queda de semana."}</div>
         <div class="fila"><button class="btn ${l === lunesProx ? "" : "prim"}" onclick="generarBorrador('${l}')">Generar borrador ya</button></div></div>`;
     return `<div class="sem-h"><h3>${titulo(l)}</h3><span>${rango(l, sumaDias(l, 6))}</span></div>
-      <div class="card semana ${nb ? "borrador-card" : ""}">${cab}${es.length ? htmlDias(l, es) : ""}</div>`;
+      <div class="card semana ${nb ? "borrador-card" : ""}">${cab}${es.length || PLAN.huecos_libres.some(h => lunesDe(h.fecha) === l)
+        ? htmlDias(l, es) : ""}</div>`;
   }).join("");
   $("badge-semana").hidden = !borrador.length;
 }
@@ -494,6 +510,24 @@ async function generarBorrador(lunes) {
 async function cambiar(id) {
   try { await api(`/api/borrador/${id}/cambiar`, {method: "POST"}); await cargaPlan(); }
   catch (e) { fallo(e); }
+}
+
+// Quitar deja el hueco libre (el borrador no lo rellena); Deshacer lo repone tal cual.
+async function quitar(id, borrador) {
+  try {
+    const r = await api(borrador ? `/api/borrador/${id}/quitar` : `/api/plan/${id}/quitar`, {method: "POST"});
+    await cargaPlan();
+    toast(`${TIPO[r.tipo]} del ${new Date(r.fecha + "T12:00").toLocaleDateString("es-ES", {weekday: "long"})}: libre`,
+          () => poner(r, true));
+  } catch (e) { fallo(e); }
+}
+
+async function poner(hueco, deshacer = false) {
+  try {
+    const r = await api("/api/huecos/poner", {method: "POST", body: JSON.stringify(hueco)});
+    await cargaPlan();
+    toast(deshacer ? "Deshecho" : r.puesto ? "Puesto en el borrador: apruébalo para guardarlo" : "No hay ninguna receta que encaje");
+  } catch (e) { fallo(e); }
 }
 
 async function descartar(n) {

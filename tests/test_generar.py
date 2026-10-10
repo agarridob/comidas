@@ -268,3 +268,62 @@ def test_endpoints_borrador(fake, monkeypatch):
     cli.post("/api/borrador/generar", json={"lunes": "2026-10-19"})
     assert cli.delete("/api/borrador").json() == {"descartadas": 11}
     assert len(fake.plan) == 11
+
+
+def test_quitar_del_borrador_deja_el_hueco_libre(fake, m):
+    with db.conexion() as c:
+        creadas = generar.genera(m, c, LUNES, DOMINGO_ANTES, random.Random(8))
+        lunes_comida = next(f for f in creadas if f["fecha"] == LUNES.isoformat() and f["tipo"] == "lunch")
+        quitado = generar.quita_borrador(c, lunes_comida["id"])
+        assert quitado == {"fecha": LUNES.isoformat(), "tipo": "lunch", "receta_id": lunes_comida["receta_id"],
+                           "congelador": False, "aprobado": False}
+        assert generar.quita_borrador(c, lunes_comida["id"]) is None
+        # Regenerar no lo rellena.
+        filas = generar.genera(m, c, LUNES, DOMINGO_ANTES, random.Random(9))
+        assert len(filas) == 10 and (LUNES.isoformat(), "lunch") not in {(f["fecha"], f["tipo"]) for f in filas}
+        # Poner sortea otro plato para ese hueco, al borrador.
+        nueva = generar.pon(m, c, LUNES, "lunch", rng=random.Random(1))
+        assert nueva["fecha"] == LUNES.isoformat() and generar.sirve_para(fake.recetas[nueva["receta_id"]], "lunch")
+        assert db.huecos_libres(c, LUNES, LUNES) == set()
+        assert generar.pon(m, c, LUNES, "lunch") is None   # ya ocupado: no se duplica
+        assert len(db.borrador(c, LUNES, LUNES + dt.timedelta(days=6))) == 11
+
+
+def test_quitar_aprobado_y_deshacer(fake, m):
+    fake.recetas["r60"] = _lentejas()
+    id_ = fake.mete(LUNES, "lunch", "r60", "Del congelador")
+    with db.conexion() as c:
+        db.marca_del_congelador(c, LUNES.isoformat(), "lunch", "r60")
+        db.suma_congelador(c, "r60", 1)
+        quitado = generar.quita_aprobado(m, c, id_)
+        assert quitado == {"fecha": LUNES.isoformat(), "tipo": "lunch", "receta_id": "r60",
+                           "congelador": True, "aprobado": True}
+        assert fake.plan == {} and db.del_congelador(c, LUNES, LUNES) == set()
+        assert generar.disponible(m, c, LUNES, DOMINGO_ANTES) == {"r60": 1}   # la ración sigue congelada
+        assert db.huecos_libres(c, LUNES, LUNES) == {(LUNES.isoformat(), "lunch")}
+        # Deshacer: vuelve a Mealie tal cual, como ración del congelador.
+        generar.pon(m, c, LUNES, "lunch", "r60", congelador=True, aprobado=True)
+        [e] = fake.plan.values()
+        assert (e["date"], e["entryType"], e["recipeId"], e["text"]) == (LUNES.isoformat(), "lunch", "r60", "Del congelador")
+        assert db.del_congelador(c, LUNES, LUNES) == {(LUNES.isoformat(), "lunch")}
+        assert db.huecos_libres(c, LUNES, LUNES) == set()
+
+
+def test_endpoints_quitar_y_poner(fake, monkeypatch):
+    monkeypatch.setattr(app_mod, "_cliente", lambda: Mealie("http://mealie", "t", transport=httpx.MockTransport(fake)))
+    monkeypatch.setattr(app_mod, "_hoy", lambda: DOMINGO_ANTES)
+    cli = TestClient(app_mod.app)
+    id_ = fake.mete(LUNES, "dinner", "r30")
+    cli.post("/api/borrador/generar", json={})
+    b = next(e for e in cli.get("/api/plan").json()["semana"] if e["borrador"] and e["tipo"] == "lunch")
+    assert cli.post(f"/api/borrador/{b['id']}/quitar").json()["aprobado"] is False
+    assert cli.post("/api/borrador/999/quitar").status_code == 404
+    r = cli.post(f"/api/plan/{id_}/quitar").json()
+    assert r == {"fecha": LUNES.isoformat(), "tipo": "dinner", "receta_id": "r30", "congelador": False, "aprobado": True}
+    plan = cli.get("/api/plan").json()
+    assert {(h["fecha"], h["tipo"]) for h in plan["huecos_libres"]} == {(b["fecha"], "lunch"), (LUNES.isoformat(), "dinner")}
+    assert cli.post("/api/huecos/poner", json=r).json() == {"puesto": True}
+    assert fake.plan[max(fake.plan)]["recipeId"] == "r30"
+    assert cli.post("/api/huecos/poner", json={"fecha": b["fecha"], "tipo": "lunch"}).json() == {"puesto": True}
+    assert cli.get("/api/plan").json()["huecos_libres"] == []
+    assert cli.post("/api/huecos/poner", json={"fecha": b["fecha"], "tipo": "snack"}).status_code == 422
