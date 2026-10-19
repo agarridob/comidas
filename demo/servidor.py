@@ -13,6 +13,7 @@ import json
 import os
 import random
 import tempfile
+from fractions import Fraction
 
 import httpx
 
@@ -65,6 +66,8 @@ RECETAS = [
      ["100 g de macarrones", "200 g de tomate triturado", "50 g de queso rallado"]),
     ("Hamburguesa de ternera con ensalada", "cena", "carne", 20, 1,
      ["1 hamburguesa de ternera", "1 tomate", "Lechuga"]),
+    ("Lubina al horno con patatas", "cena", "pescado horno", 30, 1,
+     ["1 filete de lubina", "1 patata", "1/2 cebolla", "Aceite de oliva", "Sal"]),
 ]
 PASOS = ["Prepara y corta todos los ingredientes.", "Cocina a fuego medio hasta que esté hecho.",
          "Ajusta de sal y sirve."]
@@ -97,7 +100,7 @@ class MealieDemo:
             -1: ("garbanzos-con-espinacas", "hamburguesa-de-ternera-con-ensalada"),
             0: ("espaguetis-con-tomate-y-atun", "tortilla-de-patata"),
             1: ("bacalao-con-tomate", "pollo-al-curry-con-arroz"),
-            2: ("lentejas-estofadas-con-verduras", "pechuga-de-pavo-con-verduras"),
+            2: ("lentejas-estofadas-con-verduras", "lubina-al-horno-con-patatas"),
             3: ("arroz-con-verduras", "alitas-de-pollo-en-la-airfryer"),
         }
         self.del_congelador = []
@@ -191,6 +194,9 @@ def prepara() -> None:
     app_mod._ha = lambda: HA("http://ha", "t", HADemo.ENTIDAD, transport=httpx.MockTransport(ha))
     with db.conexion() as c, app_mod._cliente() as m:
         db.suma_congelador(c, "r13", 3)   # alubias de una semana anterior
+        # El otro filete de una bandeja de dos, y media bolsa de guisantes.
+        db.mete_congelado(c, "lubina", "filete", "lubina", Fraction(1))
+        db.mete_congelado(c, "guisante", "g", "guisantes", Fraction(200))
         for fecha, tipo, receta_id in mealie.del_congelador:
             db.marca_del_congelador(c, fecha, tipo, receta_id)
         generar.sincroniza(m, c, HOY)

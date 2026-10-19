@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+from fractions import Fraction
 
 import httpx
 import pytest
@@ -269,10 +270,79 @@ def test_compra_del_plan(cli, fake, ha):
     marcados = [i["texto"] for i in items.values() if i["marcado"]]
     platos = [[x["fecha"], x["tipo"], x["receta_id"]] for x in p["platos"]]
     assert cli.post("/api/compra/plan", json={"textos": marcados, "platos": platos}).json() == \
-        {"anadidos": len(marcados), "platos": 4}
+        {"anadidos": len(marcados), "platos": 4, "apartados": 0}
     assert {i["summary"] for i in ha.items} >= set(marcados)
     p = cli.get("/api/compra/plan").json()
     assert p["platos"] == [] and p["ya_hechos"] == 4           # no se vuelve a proponer
+
+
+def test_congelado_a_mano(cli, fake):
+    assert cli.post("/api/congelado", json={"texto": "Lubina (1 filete)"}).json() == {"texto": "Lubina (1 filete)"}
+    cli.post("/api/congelado", json={"texto": "1 filete de lubina"})       # se suma
+    cli.post("/api/congelado", json={"texto": "guisantes"})                # sin cantidad
+    assert [(x["texto"], x["cantidad"]) for x in cli.get("/api/plan").json()["congelado"]] == \
+        [("Guisantes", None), ("Lubina (2 filetes)", "2")]
+    cli.post("/api/congelado/ajuste", json={"clave": "lubina", "unidad": "filete", "delta": -1})
+    cli.post("/api/congelado/ajuste", json={"clave": "guisante", "delta": None})
+    assert [x["texto"] for x in cli.get("/api/plan").json()["congelado"]] == ["Lubina (1 filete)"]
+    cli.post("/api/congelado/ajuste", json={"clave": "lubina", "unidad": "filete", "delta": -1})
+    assert cli.get("/api/plan").json()["congelado"] == []
+    assert cli.post("/api/congelado", json={"texto": "  "}).status_code == 422
+
+
+def _pechugas(p: dict) -> dict:
+    return next(i for i in p["items"] if i["nombre"] == "pechugas de pollo")
+
+
+def test_compra_saca_del_congelado(cli, fake, ha, monkeypatch):
+    cli.post("/api/congelado", json={"texto": "1 pechuga de pollo"})
+    # El pollo de mañana pide 2: hay 1, se propone comprar la otra.
+    i = _pechugas(cli.get("/api/compra/plan").json())
+    assert (i["texto"], i["congelador"], i["parcial"], i["marcado"]) == ("Pechugas de pollo (1)", "1", True, True)
+    cli.post("/api/congelado", json={"texto": "1 pechuga de pollo"})
+    p = cli.get("/api/compra/plan").json()
+    i = _pechugas(p)
+    assert (i["texto"], i["congelador"], i["parcial"], i["marcado"]) == ("Pechugas de pollo (2)", "2", False, False)
+    assert i["apartar"] == [{"fecha": _d(1), "tipo": "dinner", "receta_id": "r2", "clave": "pechuga de pollo",
+                             "unidad": None, "cantidad": "2"}]
+    platos = [[x["fecha"], x["tipo"], x["receta_id"]] for x in p["platos"]]
+    assert cli.post("/api/compra/plan", json={"textos": [], "platos": platos, "apartar": i["apartar"]}).json()["apartados"] == 1
+    assert "Pechugas de pollo (2)" not in {x["summary"] for x in ha.items}
+
+    # Apartado para el pollo de mañana: se ve en el plato, en el inventario y en Descongelar.
+    j = cli.get("/api/plan").json()
+    assert next(e for e in j["semana"] if e["id"] == 4)["congelados"] == ["Pechuga de pollo (2)"]
+    assert j["congelado"][0]["apartado"] == [{"fecha": _d(1), "tipo": "dinner", "titulo": "Pollo al curry"}]
+    assert [(e["titulo"], e["del_congelador"]) for e in j["descongelar"]] == [("Pollo al curry", False)]
+    # Ya no está libre: otra compra no lo vuelve a ofrecer.
+    with db.conexion() as c:
+        assert db.congelado_libre(c) == []
+
+    # Pasado el día, sale del inventario.
+    monkeypatch.setattr(app_mod, "_hoy", lambda: HOY + dt.timedelta(days=2))
+    j = cli.get("/api/plan").json()
+    assert j["congelado"] == []
+
+
+def test_compra_aunque_haya_en_el_congelado(cli, fake, ha):
+    """Si se marca para comprar lo que hay congelado, el cliente no lo aparta."""
+    cli.post("/api/congelado", json={"texto": "2 pechugas de pollo"})
+    p = cli.get("/api/compra/plan").json()
+    platos = [[x["fecha"], x["tipo"], x["receta_id"]] for x in p["platos"]]
+    cli.post("/api/compra/plan", json={"textos": [_pechugas(p)["texto"]], "platos": platos})
+    with db.conexion() as c:
+        assert db.reservas(c) == [] and len(db.congelado_libre(c)) == 1
+
+
+def test_apartado_sigue_al_plato(cli, fake):
+    with db.conexion() as c:
+        db.mete_congelado(c, "pechuga de pollo", None, "pechuga de pollo", Fraction(2))
+        db.reserva(c, _d(1), "dinner", "r2", "pechuga de pollo", None, Fraction(2))
+    cli.post("/api/plan/3/posponer", json={"dias": 1})   # cena de hoy: el pollo pasa a pasado mañana
+    with db.conexion() as c:
+        assert [(r["fecha"], r["tipo"]) for r in db.reservas(c)] == [(_d(2), "dinner")]
+        db.borra_reservas(c, _d(2), "dinner")            # lo que hace quitar el plato
+        assert db.reservas(c) == [] and db.congelado_libre(c)[0]["cantidad"] == 2
 
 
 def test_receta(cli, fake):
@@ -356,6 +426,16 @@ def test_aviso_descongelar(fake, monkeypatch):
     assert cuerpo["title"] == "Pasa al frigo"
     assert cuerpo["message"] == "Tortilla (comida) y Pollo al curry (cena), para mañana."
     assert cuerpo["data"] == {"group": "comidas", "url": "https://comidas.example.com"}
+
+
+def test_aviso_descongelar_ingrediente(fake):
+    from panel import avisos
+    m = Mealie("http://mealie", "t", transport=httpx.MockTransport(fake))
+    with db.conexion() as c:
+        db.mete_congelado(c, "pechuga de pollo", None, "pechuga de pollo", Fraction(2))
+        db.reserva(c, _d(1), "dinner", "r2", "pechuga de pollo", None, Fraction(2))
+        assert avisos.mensaje_descongelar(avisos.por_descongelar(m, c, HOY + dt.timedelta(days=1))) == \
+            ("Pasa al frigo", "pechuga de pollo (2) para Pollo al curry (cena), para mañana.")
 
 
 def test_aviso_borrador(monkeypatch):

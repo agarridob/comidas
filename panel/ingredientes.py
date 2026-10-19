@@ -170,17 +170,88 @@ class Item:
     basico: bool = False
 
     def cantidad(self) -> str:
-        partes = []
-        for unidad, cant in self.cantidades.items():
-            u = "" if unidad is None else " " + (_UNIDADES.get(unidad, (unidad, unidad))[1 if cant > 1 else 0])
-            partes.append(f"{_fmt(cant)}{u}")
-        return " + ".join(partes)
+        return " + ".join(fmt_cantidad(cant, unidad) for unidad, cant in self.cantidades.items() if cant > 0)
 
     def texto(self) -> str:
         """Lo que se añade a la lista de HA: "Champiñones (500 g)"."""
         nombre = self.nombre[:1].upper() + self.nombre[1:]
         c = self.cantidad()
         return f"{nombre} ({c})" if c else nombre
+
+
+def fmt_cantidad(cantidad: Fraction | None, unidad: str | None) -> str:
+    """"1 filete", "300 g", "2"; vacío sin cantidad."""
+    if cantidad is None:
+        return ""
+    u = "" if unidad is None else " " + _UNIDADES.get(unidad, (unidad, unidad))[1 if cantidad > 1 else 0]
+    return f"{_fmt(cantidad)}{u}"
+
+
+def texto_con_cantidad(nombre: str, cantidad: Fraction | None, unidad: str | None) -> str:
+    """"Lubina (1 filete)"."""
+    nombre = nombre[:1].upper() + nombre[1:]
+    c = fmt_cantidad(cantidad, unidad)
+    return f"{nombre} ({c})" if c else nombre
+
+
+def parsea_congelado(texto: str) -> Linea | None:
+    """Lo que se escribe al meter algo en el congelador: "1 filete de lubina", o como
+    sale en la lista de la compra, "Lubina (1 filete)"."""
+    texto = texto.strip()
+    m = re.match(r"^(?P<nombre>[^()]+?)\s*\((?P<cant>[^()]+)\)$", texto)
+    if m and _RE.match(m.group("cant")).group("cant"):
+        texto = f"{m.group('cant')} de {m.group('nombre')}"
+    return parsea({"note": texto})
+
+
+@dataclass
+class Apartado:
+    """Lo que se toma del congelador para un plato."""
+    plato: tuple                    # (fecha, tipo, receta_id)
+    clave: str
+    unidad: str | None
+    cantidad: Fraction | None       # None: sin cantidad (cubre lo que haga falta)
+
+
+def _necesita(receta: dict, k: str) -> list[Linea]:
+    lineas = []
+    for ing in receta.get("recipeIngredient") or []:
+        lineas += [l for l in parsea_todas(ing) if clave(l.nombre) == k]
+    return lineas
+
+
+def reparte_congelado(platos: list[tuple[tuple, dict]], libre: list[dict]) -> tuple[list[Apartado], set[str]]:
+    """Reparte lo libre del congelador entre los platos (en orden: el primero, primero).
+    `platos`: [((fecha, tipo, receta_id), receta completa)]; `libre`: filas de
+    db.congelado_libre. Devuelve lo apartado y las claves que quedan cubiertas del todo
+    (en todos sus platos)."""
+    apartado: list[Apartado] = []
+    cubiertas: dict[str, bool] = {}
+    for f in libre:
+        queda = f["cantidad"]
+        for plato, receta in platos:
+            lineas = _necesita(receta, f["clave"])
+            if not lineas:
+                continue
+            if queda is not None and queda <= 0:
+                cubiertas[f["clave"]] = False
+                continue
+            # Lo que pide la receta en la misma unidad; si la pide en otra o sin cantidad,
+            # se da por cubierta con lo que haya.
+            mismas = [l for l in lineas if l.unidad == f["unidad"] and l.cantidad is not None]
+            falta = sum((l.cantidad for l in mismas), Fraction(0)) if len(mismas) == len(lineas) else None
+            if queda is None:
+                toma, entero = None, True
+            elif falta is None:
+                toma, entero = queda, True
+            else:
+                toma = min(falta, queda)
+                entero = toma >= falta
+            if toma is not None:
+                queda -= toma
+            apartado.append(Apartado(plato, f["clave"], f["unidad"], toma))
+            cubiertas[f["clave"]] = cubiertas.get(f["clave"], True) and entero
+    return apartado, {k for k, v in cubiertas.items() if v}
 
 
 def agrega(recetas: list[dict]) -> list[Item]:

@@ -1,7 +1,8 @@
 """Avisos al móvil por la app de Home Assistant.
 
 - Descongelar: la víspera a las 21:00 (comidas-avisos.timer), si mañana toca una
-  ración del congelador que aún no está marcada como descongelada en el panel.
+  ración del congelador, o un plato con un ingrediente apartado del congelador, que
+  aún no está marcado como descongelado en el panel.
 - Borrador nuevo: el domingo, al acabar de generarlo (`python -m panel.generar --avisar`).
 
 Un aviso que falla no rompe nada: se escribe en el journal y ya está.
@@ -18,7 +19,7 @@ import os
 import sqlite3
 import sys
 
-from . import config, db
+from . import config, db, ingredientes
 from .ha import HA
 from .mealie import TIPOS_PANEL, Mealie
 
@@ -59,9 +60,18 @@ def por_descongelar(m: Mealie, c: sqlite3.Connection, manana: dt.date) -> list[t
     al frigo. Igual que el bloque Descongelar del panel: plan aprobado y borrador."""
     frigo = db.descongelados(c, manana)
     del_cong = db.del_congelador(c, manana, manana)
-    out = [(e["entryType"], (e.get("recipe") or {}).get("name") or e.get("title") or "")
-           for e in m.plan(manana, manana)
-           if e["entryType"] in TIPOS_PANEL and (e["date"], e["entryType"]) in del_cong]
+    nombres = {(f["clave"], f["unidad"]): f["nombre"] for f in db.congelados(c)}
+    sacar: dict[tuple[str, str], list[str]] = {}
+    for a in db.reservas(c, manana, manana):
+        nombre = nombres.get((a["clave"], a["unidad"]), a["clave"])
+        sacar.setdefault((a["tipo"], a["receta_id"]), []).append(
+            ingredientes.texto_con_cantidad(nombre, a["cantidad"], a["unidad"]).lower())
+    plan = [e for e in m.plan(manana, manana) if e["entryType"] in TIPOS_PANEL]
+    nombre = lambda e: (e.get("recipe") or {}).get("name") or e.get("title") or ""  # noqa: E731
+    out = [(e["entryType"], nombre(e)) for e in plan if (e["date"], e["entryType"]) in del_cong]
+    # Ingredientes sueltos apartados: "lubina (1 filete) para Lubina al horno".
+    out += [(e["entryType"], f"{_lista(sacar[k])} para {nombre(e)}")
+            for e in plan if (k := (e["entryType"], e.get("recipeId"))) in sacar]
     borrador = [f for f in db.borrador(c, manana, manana) if f["congelador"]]
     if borrador:
         recetas = {r["id"]: r for r in m.recetas()}

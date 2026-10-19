@@ -327,3 +327,9 @@ def test_endpoints_quitar_y_poner(fake, monkeypatch):
     assert cli.post("/api/huecos/poner", json={"fecha": b["fecha"], "tipo": "lunch"}).json() == {"puesto": True}
     assert cli.get("/api/plan").json()["huecos_libres"] == []
     assert cli.post("/api/huecos/poner", json={"fecha": b["fecha"], "tipo": "snack"}).status_code == 422
+
+
+def test_usan_congelado_por_nombre():
+    recetas = [{"id": "a", "name": "Lubina al horno"}, {"id": "b", "name": "Pollo al curry"},
+               {"id": "c", "name": "Lubinas a la sal"}]
+    assert generar.usan_congelado(recetas, {"lubina"}) == {"a", "c"}

@@ -70,3 +70,38 @@ def test_agrega_suma_por_unidad_y_marca_basicos():
     assert items["cebolla"].texto() == "Cebolla (1,5)"
     assert list(items)[-1] == "sal"                  # los básicos al final
     assert not any("salsa" in k for k in items)      # "Para la salsa:" es una cabecera
+
+
+@pytest.mark.parametrize("texto, nombre, cantidad, unidad", [
+    ("Lubina (1 filete)", "Lubina", 1, "filete"),
+    ("1 filete de lubina", "lubina", 1, "filete"),
+    ("Guisantes", "Guisantes", None, None),
+    ("Pan (de molde)", "Pan", None, None),          # el paréntesis no es una cantidad
+    ("300 g de gambas", "gambas", 300, "g"),
+])
+def test_parsea_congelado(texto, nombre, cantidad, unidad):
+    l = I.parsea_congelado(texto)
+    assert (l.nombre, l.cantidad, l.unidad) == (nombre, cantidad, unidad)
+
+
+def _r(*ings: str) -> dict:
+    return {"name": "x", "recipeIngredient": [{"note": i} for i in ings]}
+
+
+def test_reparte_congelado_el_primero_primero():
+    libre = [{"clave": "lubina", "unidad": "filete", "cantidad": Fraction(1)}]
+    platos = [(("2026-10-06", "dinner", "a"), _r("1 filete de lubina", "Sal")),
+              (("2026-10-08", "lunch", "b"), _r("1 filete de lubina"))]
+    apartado, cubiertas = I.reparte_congelado(platos, libre)
+    assert [(a.plato[2], a.cantidad) for a in apartado] == [("a", 1)]
+    assert cubiertas == set()                       # el segundo plato hay que comprarlo
+
+
+def test_reparte_congelado_otra_unidad_o_sin_cantidad():
+    platos = [(("2026-10-06", "dinner", "a"), _r("200 g de lubina")),
+              (("2026-10-07", "dinner", "b"), _r("Guisantes"))]
+    libre = [{"clave": "lubina", "unidad": "filete", "cantidad": Fraction(2)},
+             {"clave": "guisante", "unidad": None, "cantidad": None}]
+    apartado, cubiertas = I.reparte_congelado(platos, libre)
+    assert [(a.clave, a.cantidad) for a in apartado] == [("lubina", 2), ("guisante", None)]
+    assert cubiertas == {"lubina", "guisante"}

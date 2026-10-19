@@ -12,6 +12,10 @@ HA, de la lista de la compra. Aquí solo vive el estado del panel:
 - procesado:     platos ya pasados por el inventario (para no contarlos dos veces).
 - hueco_libre:   huecos quitados a mano (festivo, se come fuera…): el borrador no los
                  rellena.
+- congelado:     inventario: ingredientes sueltos congelados ("Lubina (1 filete)").
+- reserva_congelado: lo de `congelado` apartado para un plato aprobado al preparar la
+                 compra (no se compra; la víspera, aviso de pasarlo al frigo). Al pasar
+                 el día, se descuenta del inventario.
 
 El fichero está en /var/lib/comidas (StateDirectory de systemd); conviene que entre
 en el backup del servidor.
@@ -23,6 +27,7 @@ import datetime as dt
 import os
 import sqlite3
 from contextlib import closing, contextmanager
+from fractions import Fraction
 from pathlib import Path
 from typing import Iterator
 
@@ -74,6 +79,29 @@ CREATE TABLE IF NOT EXISTS hueco_libre (
     fecha  TEXT NOT NULL,
     tipo   TEXT NOT NULL,
     PRIMARY KEY (fecha, tipo)
+);
+
+-- Ingredientes sueltos congelados, por clave normalizada (ingredientes.clave) y unidad
+-- ('' = piezas). cantidad es una fracción en texto ("1", "1/2"); NULL = sin cantidad
+-- (una bolsa de guisantes): cubre cualquier receta y no se gasta sola.
+CREATE TABLE IF NOT EXISTS congelado (
+    clave       TEXT NOT NULL,
+    unidad      TEXT NOT NULL DEFAULT '',
+    nombre      TEXT NOT NULL,
+    cantidad    TEXT,
+    actualizado TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (clave, unidad)
+);
+
+-- Lo de `congelado` apartado para un plato aprobado (fecha, tipo, receta).
+CREATE TABLE IF NOT EXISTS reserva_congelado (
+    fecha     TEXT NOT NULL,
+    tipo      TEXT NOT NULL,
+    receta_id TEXT NOT NULL,
+    clave     TEXT NOT NULL,
+    unidad    TEXT NOT NULL DEFAULT '',
+    cantidad  TEXT,
+    PRIMARY KEY (fecha, tipo, clave, unidad)
 );
 
 CREATE TABLE IF NOT EXISTS descongelado (
@@ -223,6 +251,102 @@ def borra_del_congelador(c: sqlite3.Connection, fecha: str, tipo: str) -> None:
     c.execute("DELETE FROM del_congelador WHERE fecha = ? AND tipo = ?", (fecha, tipo))
 
 
+# --- Ingredientes congelados ------------------------------------------------------
+
+def _frac(texto: str | None) -> Fraction | None:
+    return None if texto is None else Fraction(texto)
+
+
+def congelados(c: sqlite3.Connection) -> list[dict]:
+    """Inventario de ingredientes sueltos: clave, unidad (None = piezas), nombre y
+    cantidad (Fraction, o None si no se lleva la cuenta)."""
+    filas = c.execute("SELECT clave, unidad, nombre, cantidad FROM congelado ORDER BY clave, unidad")
+    return [{"clave": f["clave"], "unidad": f["unidad"] or None, "nombre": f["nombre"],
+             "cantidad": _frac(f["cantidad"])} for f in filas]
+
+
+def mete_congelado(c: sqlite3.Connection, clave: str, unidad: str | None, nombre: str,
+                   cantidad: Fraction | None) -> None:
+    """Añade al inventario. Si ya había de lo mismo (clave y unidad), se suma; si una de
+    las dos no tiene cantidad, el resultado tampoco."""
+    f = c.execute("SELECT cantidad FROM congelado WHERE clave = ? AND unidad = ?", (clave, unidad or "")).fetchone()
+    if f is not None:
+        antes = _frac(f["cantidad"])
+        cantidad = None if antes is None or cantidad is None else antes + cantidad
+    c.execute("INSERT INTO congelado (clave, unidad, nombre, cantidad) VALUES (?, ?, ?, ?) "
+              "ON CONFLICT(clave, unidad) DO UPDATE SET cantidad = excluded.cantidad, actualizado = datetime('now')",
+              (clave, unidad or "", nombre, None if cantidad is None else str(cantidad)))
+
+
+def suma_congelado(c: sqlite3.Connection, clave: str, unidad: str | None, delta: Fraction | None) -> Fraction | None:
+    """Corrige la cantidad (delta negativo = sacar). Con delta None, o al llegar a 0, se
+    quita del inventario (y sus reservas). Devuelve lo que queda (None = quitado o sin
+    cantidad)."""
+    f = c.execute("SELECT cantidad FROM congelado WHERE clave = ? AND unidad = ?", (clave, unidad or "")).fetchone()
+    if f is None:
+        return None
+    antes = _frac(f["cantidad"])
+    if delta is None or (antes is not None and antes + delta <= 0):
+        c.execute("DELETE FROM congelado WHERE clave = ? AND unidad = ?", (clave, unidad or ""))
+        c.execute("DELETE FROM reserva_congelado WHERE clave = ? AND unidad = ?", (clave, unidad or ""))
+        return None
+    if antes is None:
+        return None
+    c.execute("UPDATE congelado SET cantidad = ?, actualizado = datetime('now') WHERE clave = ? AND unidad = ?",
+              (str(antes + delta), clave, unidad or ""))
+    return antes + delta
+
+
+def reservas(c: sqlite3.Connection, desde: dt.date | None = None, hasta: dt.date | None = None) -> list[dict]:
+    """Lo apartado para platos entre esas fechas (por defecto, todo)."""
+    filas = c.execute(
+        "SELECT fecha, tipo, receta_id, clave, unidad, cantidad FROM reserva_congelado "
+        "WHERE fecha BETWEEN ? AND ? ORDER BY fecha, tipo",
+        ((desde or dt.date.min).isoformat(), (hasta or dt.date.max).isoformat()))
+    return [{**dict(f), "unidad": f["unidad"] or None, "cantidad": _frac(f["cantidad"])} for f in filas]
+
+
+def reserva(c: sqlite3.Connection, fecha: str, tipo: str, receta_id: str, clave: str, unidad: str | None,
+            cantidad: Fraction | None) -> None:
+    c.execute("INSERT OR REPLACE INTO reserva_congelado (fecha, tipo, receta_id, clave, unidad, cantidad) "
+              "VALUES (?, ?, ?, ?, ?, ?)",
+              (fecha, tipo, receta_id, clave, unidad or "", None if cantidad is None else str(cantidad)))
+
+
+def borra_reservas(c: sqlite3.Connection, fecha: str, tipo: str) -> None:
+    """El plato se quitó: lo apartado para él vuelve a estar libre."""
+    c.execute("DELETE FROM reserva_congelado WHERE fecha = ? AND tipo = ?", (fecha, tipo))
+
+
+def congelado_libre(c: sqlite3.Connection) -> list[dict]:
+    """El inventario menos lo ya apartado para algún plato. Lo que no tiene cantidad
+    sigue libre aunque esté apartado (una bolsa da para varias veces)."""
+    apartado: dict[tuple[str, str | None], Fraction] = {}
+    for r in reservas(c):
+        if r["cantidad"] is not None:
+            k = (r["clave"], r["unidad"])
+            apartado[k] = apartado.get(k, Fraction(0)) + r["cantidad"]
+    out = []
+    for f in congelados(c):
+        if f["cantidad"] is not None:
+            f = {**f, "cantidad": f["cantidad"] - apartado.get((f["clave"], f["unidad"]), Fraction(0))}
+            if f["cantidad"] <= 0:
+                continue
+        out.append(f)
+    return out
+
+
+def consume_reservas(c: sqlite3.Connection, hasta: dt.date) -> int:
+    """Platos ya pasados: lo apartado para ellos sale del inventario. Devuelve cuántas
+    reservas se aplicaron."""
+    hechas = reservas(c, dt.date.min, hasta)
+    for r in hechas:
+        if r["cantidad"] is not None:
+            suma_congelado(c, r["clave"], r["unidad"], -r["cantidad"])
+    c.execute("DELETE FROM reserva_congelado WHERE fecha <= ?", (hasta.isoformat(),))
+    return len(hechas)
+
+
 def procesados(c: sqlite3.Connection, desde: dt.date, hasta: dt.date) -> set[tuple[str, str, str]]:
     filas = c.execute("SELECT fecha, tipo, receta_id FROM procesado WHERE fecha BETWEEN ? AND ?",
                       (desde.isoformat(), hasta.isoformat()))
@@ -247,12 +371,13 @@ def _desplaza_tabla(c: sqlite3.Connection, tabla: str, extra: tuple[str, ...], t
 
 
 def desplaza(c: sqlite3.Connection, tipo: str, desde: dt.date, dias: int) -> None:
-    """Al posponer, el borrador, lo descongelado, lo ya pasado a la compra y las
-    raciones del congelador de ese tipo desde `desde` se corren igual que el plan de
-    Mealie: el estado sigue al plato."""
+    """Al posponer, el borrador, lo descongelado, lo ya pasado a la compra, las
+    raciones del congelador y lo apartado del congelador de ese tipo desde `desde` se
+    corren igual que el plan de Mealie: el estado sigue al plato."""
     signo = f"{dias:+d} days"
     c.execute("UPDATE borrador SET fecha = date(fecha, ?) WHERE tipo = ? AND fecha >= ?",
               (signo, tipo, desde.isoformat()))
     _desplaza_tabla(c, "descongelado", (), tipo, desde, signo)
     _desplaza_tabla(c, "compra_hecha", ("receta_id",), tipo, desde, signo)
     _desplaza_tabla(c, "del_congelador", ("receta_id",), tipo, desde, signo)
+    _desplaza_tabla(c, "reserva_congelado", ("receta_id", "clave", "unidad", "cantidad"), tipo, desde, signo)

@@ -21,7 +21,7 @@ import random
 import sqlite3
 from collections import Counter
 
-from . import avisos, config, db
+from . import avisos, config, db, ingredientes
 from .mealie import Mealie
 
 
@@ -52,10 +52,22 @@ def _cabe(receta: dict, cuenta: Counter) -> bool:
     return all(cuenta[s] < config.MAXIMOS[s] for s in _slugs(receta) if s in config.MAXIMOS)
 
 
-def _sortea(candidatas: list[dict], rng: random.Random) -> dict | None:
+def _sortea(candidatas: list[dict], rng: random.Random, favoritas: set[str] = frozenset()) -> dict | None:
     if not candidatas:
         return None
-    return rng.choices(candidatas, weights=[peso(r) for r in candidatas])[0]
+    pesos = [peso(r) * (config.PESO_CONGELADO if r["id"] in favoritas else 1) for r in candidatas]
+    return rng.choices(candidatas, weights=pesos)[0]
+
+
+def usan_congelado(recetas: list[dict], claves: set[str]) -> set[str]:
+    """Ids de las recetas cuyo nombre lleva algo del congelador ("Lubina al horno" con
+    lubina congelada). Solo el nombre: el resumen de Mealie no trae ingredientes."""
+    out = set()
+    for r in recetas:
+        nombre = f" {ingredientes.clave(r.get('name') or '')} "
+        if any(f" {k} " in nombre for k in claves):
+            out.add(r["id"])
+    return out
 
 
 def sirve_para(receta: dict, tipo: str) -> bool:
@@ -66,12 +78,13 @@ def sirve_para(receta: dict, tipo: str) -> bool:
 
 
 def elige(recetas: list[dict], tipos: list[str], fijas: list[dict], recientes: set[str],
-          rng: random.Random) -> list[dict | None]:
+          rng: random.Random, favoritas: set[str] = frozenset()) -> list[dict | None]:
     """Elige una receta distinta para cada hueco de `tipos` (lunch/dinner), alineada
     con él, de modo que junto con `fijas` (ya en la semana) se cumplan mínimos y
     máximos. La categoría (comida/cena) nunca se relaja: antes queda el hueco a None.
     Primero se cubren los mínimos, luego se rellena; si faltan recetas, se relaja
-    primero no repetir las recientes y después las reglas de variedad."""
+    primero no repetir las recientes y después las reglas de variedad. Las `favoritas`
+    (usan algo del congelador) pesan más en el sorteo."""
     usadas = {r["id"] for r in fijas}
     cuenta = Counter(s for r in fijas for s in _slugs(r))
     out: list[dict | None] = [None] * len(tipos)
@@ -102,7 +115,7 @@ def elige(recetas: list[dict], tipos: list[str], fijas: list[dict], recientes: s
             cands = [r for r in pool(None, etiqueta=etiqueta) if any(sirve_para(r, t) for t in tipos_libres())]
             cands = cands or [r for r in pool(None, etiqueta=etiqueta, sin_recientes=False)
                               if any(sirve_para(r, t) for t in tipos_libres())]
-            r = _sortea(cands, rng)
+            r = _sortea(cands, rng, favoritas)
             if r is None:
                 break
             tipo = max((t for t in tipos_libres() if sirve_para(r, t)), key=lambda t: len(libres(t)))
@@ -112,9 +125,9 @@ def elige(recetas: list[dict], tipos: list[str], fijas: list[dict], recientes: s
     rng.shuffle(pendientes)
     for i in pendientes:
         t = tipos[i]
-        r = (_sortea(pool(t), rng)
-             or _sortea(pool(t, sin_recientes=False), rng)
-             or _sortea(pool(t, sin_recientes=False, con_reglas=False), rng))
+        r = (_sortea(pool(t), rng, favoritas)
+             or _sortea(pool(t, sin_recientes=False), rng, favoritas)
+             or _sortea(pool(t, sin_recientes=False, con_reglas=False), rng, favoritas))
         if r is not None:   # si no, el hueco se queda libre
             toma(r, i)
     return out
@@ -168,8 +181,10 @@ def _semana(lunes: dt.date) -> tuple[dt.date, dt.date]:
 def sincroniza(m: Mealie, c: sqlite3.Connection, hoy: dt.date) -> None:
     """Aplica al inventario los platos de los últimos 14 días que ya pasaron: un
     congelable cocinado mete (raciones - 1) al congelador; una ración del congelador
-    comida, saca 1. Cada plato se procesa una sola vez."""
+    comida, saca 1. Cada plato se procesa una sola vez. Los ingredientes congelados
+    apartados para platos ya pasados también salen."""
     desde, hasta = hoy - dt.timedelta(days=14), hoy - dt.timedelta(days=1)
+    db.consume_reservas(c, hasta)
     hechos = db.procesados(c, desde, hasta)
     del_cong = db.del_congelador(c, desde, hasta)
     for e in m.plan(desde, hasta):
@@ -233,7 +248,8 @@ def genera(m: Mealie, c: sqlite3.Connection, lunes: dt.date, hoy: dt.date,
     # Lo del congelador cuenta para las reglas y no se vuelve a sortear esa semana.
     fijas += list(del_congelador.values())
     recientes = _recientes(m, lunes) | {r["id"] for r in del_congelador.values()}
-    sorteo = elige(recetas, [libres[i][1] for i in resto], fijas, recientes, rng)
+    favoritas = usan_congelado(recetas, {f["clave"] for f in db.congelado_libre(c)})
+    sorteo = elige(recetas, [libres[i][1] for i in resto], fijas, recientes, rng, favoritas)
     elegidas: dict[int, tuple[dict, bool]] = {i: (r, True) for i, r in del_congelador.items()}
     elegidas.update({i: (r, False) for i, r in zip(resto, sorteo) if r is not None})
     return [
@@ -269,7 +285,8 @@ def _sortea_hueco(m: Mealie, c: sqlite3.Connection, fecha: dt.date, tipo: str, r
     ids += [b["receta_id"] for b in db.borrador(c, *_semana(lunes)) if b["id"] != sin_borrador]
     resto = [por_id[i] for i in ids if i in por_id]
     recientes = _recientes(m, lunes) | ({evita} if evita else set())
-    return elige(recetas, [tipo], resto, recientes, rng)[0]
+    favoritas = usan_congelado(recetas, {f["clave"] for f in db.congelado_libre(c)})
+    return elige(recetas, [tipo], resto, recientes, rng, favoritas)[0]
 
 
 def quita_borrador(c: sqlite3.Connection, borrador_id: int) -> dict | None:
@@ -286,12 +303,14 @@ def quita_borrador(c: sqlite3.Connection, borrador_id: int) -> dict | None:
 
 def quita_aprobado(m: Mealie, c: sqlite3.Connection, entrada_id: int) -> dict:
     """Borra un plato aprobado de Mealie y deja su hueco libre. Si era una ración del
-    congelador, ya no se cuenta como comida. Devuelve lo quitado (para deshacer)."""
+    congelador, ya no se cuenta como comida; lo apartado del congelador para él queda
+    libre. Devuelve lo quitado (para deshacer)."""
     e = m.entrada(entrada_id)
     fecha = dt.date.fromisoformat(e["date"])
     cong = (e["date"], e["entryType"]) in db.del_congelador(c, fecha, fecha)
     m.borra_entrada(entrada_id)
     db.borra_del_congelador(c, e["date"], e["entryType"])
+    db.borra_reservas(c, e["date"], e["entryType"])
     db.marca_libre(c, e["date"], e["entryType"], True)
     return {"fecha": e["date"], "tipo": e["entryType"], "receta_id": e.get("recipeId"),
             "congelador": cong, "aprobado": True}

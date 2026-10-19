@@ -56,6 +56,12 @@ más (raciones − 1) entran al inventario del congelador, y el borrador de la s
 sortear el resto. Lo que sale del congelador no entra en "Preparar compra". Las recetas no congelables se cocinan
 justas.
 
+También se pueden **meter ingredientes sueltos** a mano ("1 filete de lubina", "Guisantes (200 g)"): el filete
+que sobró de una bandeja de dos. En "Preparar compra" salen desmarcados con "❄ en el congelador" (si solo cubren
+una parte, se propone comprar el resto); al pasar la compra quedan apartados para ese plato, con aviso de
+descongelar la víspera, y al pasar el día se descuentan. Si se marcan para comprar igualmente, no se apartan. El
+borrador da algo más de peso (`PESO_CONGELADO`) a las recetas que los llevan en el nombre.
+
 ### Borrador semanal
 
 Los **domingos a las 9:00** (`comidas-borrador.timer`) se genera el plan de lunes a domingo de la semana siguiente

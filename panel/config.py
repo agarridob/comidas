@@ -35,6 +35,9 @@ ESTRELLAS_SIN_VALORAR = 3.0
 # y el borrador de la semana siguiente las coloca antes de sortear el resto. La
 # víspera de cada una, aviso de descongelar.
 ETIQUETA_CONGELABLE = "congelable"
+# Ingredientes sueltos en el congelador ("Lubina (1 filete)"): las recetas que los
+# llevan en el nombre pesan esto más en el sorteo, para que no se queden olvidados.
+PESO_CONGELADO = 3
 
 # No repetir recetas planificadas en los últimos N días.
 DIAS_SIN_REPETIR = 14

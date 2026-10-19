@@ -9,6 +9,7 @@ from __future__ import annotations
 import datetime as dt
 import os
 import re
+from fractions import Fraction
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -140,6 +141,8 @@ def plan() -> JSONResponse:
             del_cong = db.del_congelador(c, desde, hasta)
             stock = db.congelador(c)
             libres = db.huecos_libres(c, hoy, hasta)
+            inventario = db.congelados(c)
+            apartados = db.reservas(c, hoy, hasta)
         crudo = [e for e in m.plan(desde, hasta) if e["entryType"] in TIPOS_PANEL]
         valoraciones = m.mis_valoraciones()
         recetas = {r["id"]: r for r in m.recetas()} if (filas or stock) else {}
@@ -148,7 +151,14 @@ def plan() -> JSONResponse:
     notas: dict[str, list[dict]] = {}
     for c in comentarios:
         notas.setdefault(c.get("recipeId"), []).append(_nota(c))
-    entradas = [{**_entrada(e, valoraciones), "del_congelador": (e["date"], e["entryType"]) in del_cong}
+    nombres = {(f["clave"], f["unidad"]): f["nombre"] for f in inventario}
+    texto_apartado = lambda a: ingredientes.texto_con_cantidad(  # noqa: E731
+        nombres.get((a["clave"], a["unidad"]), a["clave"]), a["cantidad"], a["unidad"])
+    sacar: dict[tuple[str, str, str], list[str]] = {}
+    for a in apartados:
+        sacar.setdefault((a["fecha"], a["tipo"], a["receta_id"]), []).append(texto_apartado(a))
+    entradas = [{**_entrada(e, valoraciones), "del_congelador": (e["date"], e["entryType"]) in del_cong,
+                 "congelados": sacar.get((e["date"], e["entryType"], e.get("recipeId")), [])}
                 for e in crudo]
     entradas += [{**_entrada(_como_entrada(f, recetas), valoraciones, borrador=True),
                   "del_congelador": bool(f["congelador"]), "notas_receta": notas.get(f["receta_id"], [])}
@@ -161,7 +171,8 @@ def plan() -> JSONResponse:
         "hoy": hoy.isoformat(),
         "comidas_hoy": del_dia(hoy),
         "por_valorar": _por_valorar(entradas, desde, hoy),
-        "descongelar": [{**e, "descongelado": e["tipo"] in frigo} for e in del_dia(manana) if e["del_congelador"]],
+        "descongelar": [{**e, "descongelado": e["tipo"] in frigo} for e in del_dia(manana)
+                        if e["del_congelador"] or e.get("congelados")],
         # Desde el lunes de esta semana: lo ya comido se ve (atenuado) en el Plan.
         "semana": [e for e in entradas if e["fecha"] >= (hoy - dt.timedelta(days=hoy.weekday())).isoformat()],
         "huecos_libres": [{"fecha": f, "tipo": t} for f, t in sorted(libres)],
@@ -169,7 +180,46 @@ def plan() -> JSONResponse:
             ({"receta_id": rid, "raciones": n, "nombre": (recetas.get(rid) or {}).get("name", "¿receta borrada?"),
               "slug": (recetas.get(rid) or {}).get("slug")} for rid, n in stock.items()),
             key=lambda x: x["nombre"]),
+        # Ingredientes sueltos, con los platos para los que ya están apartados.
+        "congelado": [
+            {"clave": f["clave"], "unidad": f["unidad"], "nombre": f["nombre"],
+             "texto": ingredientes.texto_con_cantidad(f["nombre"], f["cantidad"], f["unidad"]),
+             "cantidad": _cantidad_json(f["cantidad"]),
+             "apartado": [{"fecha": e["fecha"], "tipo": e["tipo"], "titulo": e["titulo"]}
+                          for a in apartados if (a["clave"], a["unidad"]) == (f["clave"], f["unidad"])
+                          for e in entradas if (e["fecha"], e["tipo"], e["receta_id"]) == (a["fecha"], a["tipo"], a["receta_id"])]}
+            for f in inventario
+        ],
     })
+
+
+class Congelar(BaseModel):
+    texto: str = Field(min_length=1, max_length=200)
+
+
+@app.post("/api/congelado")
+def congela(p: Congelar) -> dict:
+    """Mete un ingrediente suelto en el congelador: "1 filete de lubina", "Lubina (1 filete)"."""
+    linea = ingredientes.parsea_congelado(p.texto)
+    if linea is None or not ingredientes.clave(linea.nombre):
+        raise HTTPException(422, "No entiendo qué es")
+    with db.conexion() as c:
+        db.mete_congelado(c, ingredientes.clave(linea.nombre), linea.unidad, linea.nombre, linea.cantidad)
+    return {"texto": ingredientes.texto_con_cantidad(linea.nombre, linea.cantidad, linea.unidad)}
+
+
+class AjusteCongelado(BaseModel):
+    clave: str
+    unidad: str | None = None
+    delta: int | None = Field(None, ge=-20, le=20)   # None = quitarlo del todo
+
+
+@app.post("/api/congelado/ajuste")
+def ajusta_congelado(a: AjusteCongelado) -> dict:
+    """Corrección a mano: − / + de uno en uno, o quitarlo (se gastó, se tiró…)."""
+    with db.conexion() as c:
+        queda = db.suma_congelado(c, a.clave, a.unidad, None if a.delta is None else Fraction(a.delta))
+    return {"cantidad": _cantidad_json(queda)}
 
 
 class Ajuste(BaseModel):
@@ -401,13 +451,21 @@ def _platos_compra(m: Mealie, c, hoy: dt.date) -> tuple[list[dict], int]:
     return pendientes, len(platos) - len(pendientes)
 
 
+def _cantidad_json(c: Fraction | None) -> str | None:
+    return None if c is None else str(c)
+
+
 @app.get("/api/compra/plan")
 def compra_del_plan() -> JSONResponse:
     """Propuesta de compra con los ingredientes del plan aprobado (vista previa: no
-    añade nada). Básicos, opcionales y lo ya pendiente en la lista salen desmarcados."""
+    añade nada). Básicos, opcionales y lo ya pendiente en la lista salen desmarcados.
+    Lo que hay en el congelador (y no está apartado para otro plato) también: si
+    cubre solo una parte, se propone comprar el resto. `apartar` es lo que se toma
+    del congelador para cada plato si se pasa la compra así."""
     hoy = _hoy()
     with _cliente() as m, db.conexion() as c:
         platos, ya_hechos = _platos_compra(m, c, hoy)
+        libre = db.congelado_libre(c)
         recetas = {}
         for e in platos:
             slug = e["recipe"]["slug"]
@@ -416,38 +474,79 @@ def compra_del_plan() -> JSONResponse:
     with _ha() as h:
         en_lista = {ingredientes.clave(i.get("summary") or "") for i in h.items() if i.get("status") != "completed"}
     items = ingredientes.agrega([recetas[e["recipe"]["slug"]] for e in platos])
+    apartado, cubiertas = ingredientes.reparte_congelado(
+        [((e["date"], e["entryType"], e["recipeId"]), recetas[e["recipe"]["slug"]]) for e in platos], libre)
+
+    def item(it: ingredientes.Item) -> dict:
+        suyo = [a for a in apartado if a.clave == it.clave]
+        out = {
+            "texto": it.texto(), "nombre": it.nombre, "cantidad": it.cantidad(), "recetas": it.recetas,
+            "basico": it.basico, "opcional": it.opcional, "en_lista": it.clave in en_lista,
+            "marcado": not (it.basico or it.opcional or it.clave in en_lista),
+            "congelador": None, "parcial": False, "apartar": [],
+        }
+        if not suyo:
+            return out
+        # Lo que se saca, junto por unidad, y lo que falta por comprar.
+        sacado: dict[str | None, Fraction | None] = {}
+        for a in suyo:
+            if a.unidad in sacado and sacado[a.unidad] is None:
+                continue
+            sacado[a.unidad] = None if a.cantidad is None else sacado.get(a.unidad, Fraction(0)) + a.cantidad
+        # "1 filete"; vacío si lo congelado no lleva cantidad.
+        out["congelador"] = " + ".join(filter(None, (ingredientes.fmt_cantidad(q, u) for u, q in sacado.items())))
+        out["apartar"] = [{"fecha": a.plato[0], "tipo": a.plato[1], "receta_id": a.plato[2], "clave": a.clave,
+                           "unidad": a.unidad, "cantidad": _cantidad_json(a.cantidad)} for a in suyo]
+        if it.clave in cubiertas:
+            out["marcado"] = False
+        else:
+            resto = dict(it.cantidades)
+            for u, q in sacado.items():
+                if u in resto and q is not None:
+                    resto[u] -= q
+            out["parcial"] = True
+            out["texto"] = ingredientes.Item(it.clave, it.nombre, resto).texto()
+        return out
+
     return JSONResponse({
         "desde": hoy.isoformat(),
         "hasta": (hoy + dt.timedelta(days=config.DIAS_COMPRA - 1)).isoformat(),
         "ya_hechos": ya_hechos,
         "platos": [{"fecha": e["date"], "tipo": e["entryType"], "receta_id": e["recipeId"],
                     "titulo": e["recipe"]["name"]} for e in platos],
-        "items": [
-            {
-                "texto": it.texto(), "nombre": it.nombre, "cantidad": it.cantidad(), "recetas": it.recetas,
-                "basico": it.basico, "opcional": it.opcional, "en_lista": it.clave in en_lista,
-                "marcado": not (it.basico or it.opcional or it.clave in en_lista),
-            }
-            for it in items
-        ],
+        "items": [item(it) for it in items],
     })
+
+
+class Apartar(BaseModel):
+    fecha: dt.date
+    tipo: str = Field(pattern="^(lunch|dinner)$")
+    receta_id: str
+    clave: str
+    unidad: str | None = None
+    cantidad: str | None = None   # fracción ("1", "1/2"); None = sin cantidad
 
 
 class PasarCompra(BaseModel):
     textos: list[str] = Field(max_length=200)
     platos: list[tuple[dt.date, str, str]]   # (fecha, tipo, receta_id) de la vista previa
+    apartar: list[Apartar] = []              # lo que se saca del congelador en vez de comprarlo
 
 
 @app.post("/api/compra/plan")
 def pasa_a_compra(p: PasarCompra) -> dict:
-    """Añade a la lista de HA lo marcado y apunta esos platos como ya pasados."""
+    """Añade a la lista de HA lo marcado, aparta del congelador lo que no se compra y
+    apunta esos platos como ya pasados."""
     with _ha() as h:
         for t in p.textos:
             if t.strip():
                 h.anade(t.strip())
     with db.conexion() as c:
         db.marca_compra_hecha(c, [(f.isoformat(), t, r) for f, t, r in p.platos])
-    return {"anadidos": len([t for t in p.textos if t.strip()]), "platos": len(p.platos)}
+        for a in p.apartar:
+            db.reserva(c, a.fecha.isoformat(), a.tipo, a.receta_id, a.clave, a.unidad,
+                       None if a.cantidad is None else Fraction(a.cantidad))
+    return {"anadidos": len([t for t in p.textos if t.strip()]), "platos": len(p.platos), "apartados": len(p.apartar)}
 
 
 @app.delete("/api/compra/comprados")

@@ -104,6 +104,11 @@
   .congelador .cg-n{display:inline-flex;align-items:center;gap:.5rem}
   .congelador .cg-n .btn{min-height:34px;width:34px;padding:0}
   .cg-ayuda{margin-top:.6rem;font-size:.78rem}
+  .congelador .cg-sub{padding:.6rem 0 .3rem;border-top:0}
+  .congelador .cg-sub ~ .cg-sub{border-top:1px solid var(--line);margin-top:.3rem}
+  .congelador .cg-sub + .cg-fila{border-top:0}
+  .cg-anadir{margin:.8rem 0 0}
+  .prep-cg{display:block;color:var(--frio);font-size:.74rem;font-weight:600;margin-top:.1rem}
   .tag.sobras{color:var(--frio);border-color:color-mix(in srgb,var(--frio) 45%,transparent)}
   .nota-btn{display:block;padding:.55rem 0 0;font-size:.85rem}
   .nota-form{margin:.7rem 0 0}
@@ -362,7 +367,10 @@ function pintaHoy() {
         ${platoTitulo(e)}: ya está en el frigo para mañana.
         <button class="enlace" onclick="descongelado('${e.fecha}','${e.tipo}',false)">Deshacer</button></div></div>`
     : `<div class="card frio"><div class="ico">❄</div><div>
-        <b>Antes de dormir:</b> pasa del congelador al frigo la ración de mañana (${TIPO[e.tipo].toLowerCase()}): ${platoTitulo(e)}.
+        <b>Antes de dormir:</b> ${e.del_congelador
+          ? `pasa del congelador al frigo la ración de mañana (${TIPO[e.tipo].toLowerCase()}): ${platoTitulo(e)}.`
+          : `pasa del congelador al frigo ${esc(e.congelados.join(", ").toLowerCase())}
+             para la ${TIPO[e.tipo].toLowerCase()} de mañana: ${platoTitulo(e)}.`}
         <div class="fila"><button class="btn frio-btn" onclick="descongelado('${e.fecha}','${e.tipo}',true)">Hecho, está en el frigo</button></div>
       </div></div>`);
   const nb = p.semana.filter(e => e.borrador).length;
@@ -402,6 +410,7 @@ function htmlPlato(e) {
   const info = [
     e.del_congelador ? `<span class="pill frio">❄ Del congelador</span>`
       : e.congelable && e.raciones > 1 ? `<span class="pill cocina" >Haz ${e.raciones} · ${e.raciones - 1} al congelador</span>` : "",
+    (e.congelados || []).length ? `<span class="pill frio">❄ ${esc(e.congelados.join(", "))}</span>` : "",
     e.borrador ? "" : miniEstrellas(e),
   ].join("");
   return `<div class="e ${e.borrador ? "es-borrador" : ""} ${e.del_congelador ? "recalentar" : ""}"><div>
@@ -427,8 +436,9 @@ const htmlHueco = h => `<div class="e hueco"><div><small class="tipo">${TIPO[h.t
 function htmlDias(lunes, entradas) {
   const dias = {}, frio = {}, limite = sumaDias(PLAN.hoy, 13);
   for (const e of entradas) (dias[e.fecha] ??= []).push(e);
-  for (const e of PLAN.semana) if (e.del_congelador) (frio[sumaDias(e.fecha, -1)] ??= []).push(e);
+  for (const e of PLAN.semana) if (e.del_congelador || (e.congelados || []).length) (frio[sumaDias(e.fecha, -1)] ??= []).push(e);
   const hecho = e => PLAN.descongelar.some(d => d.fecha === e.fecha && d.tipo === e.tipo && d.descongelado);
+  const queSacar = e => e.del_congelador ? esc(e.titulo) : `${esc(e.congelados.join(", ").toLowerCase())} para ${esc(e.titulo)}`;
   const filas = [];
   for (let i = 0; i < 7; i++) {
     const f = sumaDias(lunes, i);
@@ -436,8 +446,8 @@ function htmlDias(lunes, entradas) {
     const huecos = f < PLAN.hoy ? [] : PLAN.huecos_libres.filter(h => h.fecha === f).map(h => ({...h, hueco: true}));
     const es = [...(dias[f] || []), ...huecos].sort((a, b) => (a.tipo === "lunch" ? 0 : 1) - (b.tipo === "lunch" ? 0 : 1));
     const avisos = f < PLAN.hoy ? "" : (frio[f] || []).map(e => hecho(e)
-      ? `<div class="aviso-frio hecho">✓ ${esc(e.titulo)} ya está en el frigo</div>`
-      : `<div class="aviso-frio"><span>❄</span><span>${f === PLAN.hoy ? "Esta noche" : "Por la noche"}: pasa al frigo ${esc(e.titulo)}</span></div>`).join("");
+      ? `<div class="aviso-frio hecho">✓ ${queSacar(e)} ya está en el frigo</div>`
+      : `<div class="aviso-frio"><span>❄</span><span>${f === PLAN.hoy ? "Esta noche" : "Por la noche"}: pasa al frigo ${queSacar(e)}</span></div>`).join("");
     const d = new Date(f + "T12:00");
     filas.push(`<div class="dia ${f === PLAN.hoy ? "hoy" : f < PLAN.hoy ? "pasado" : ""}">
       <div class="d"><small>${f === PLAN.hoy ? "Hoy" : d.toLocaleDateString("es-ES", {weekday: "short"}).replace(".", "")}</small><b>${d.getDate()}</b></div>
@@ -482,21 +492,57 @@ function pintaCongelador() {
   const el = $("cg");
   if (el && PLAN) el.innerHTML = htmlCongelador();
 }
+// Unidades que se cuentan de una en una (− / +); el peso o el volumen solo se quita.
+const CONTABLE = u => !u || !["g", "kg", "ml", "cl", "l"].includes(u);
+const paraPlato = a => `${TIPO[a.tipo].toLowerCase()} ${cuando2(a.fecha)}`;
+const cuando2 = f => f === PLAN.hoy ? "de hoy" : f === sumaDias(PLAN.hoy, 1) ? "de mañana"
+  : "del " + new Date(f + "T12:00").toLocaleDateString("es-ES", {weekday: "long"});
+
 function htmlCongelador() {
-  const cg = PLAN.congelador || [];
-  return `<h2>Congelador</h2><div class="card congelador">${cg.length
-    ? cg.map(x => `<div class="cg-fila"><span>${esc(x.nombre)}</span>
+  const cg = PLAN.congelador || [], ing = PLAN.congelado || [];
+  const raciones = cg.map(x => `<div class="cg-fila"><span>${esc(x.nombre)}</span>
         <span class="cg-n"><button class="btn" onclick="ajustaCongelador('${esc(x.receta_id)}',-1)" aria-label="Una ración menos">−</button>
         <b>${x.raciones}</b>
-        <button class="btn" onclick="ajustaCongelador('${esc(x.receta_id)}',1)" aria-label="Una ración más">+</button></span></div>`).join("")
-    : `<div class="meta">Vacío.</div>`}
+        <button class="btn" onclick="ajustaCongelador('${esc(x.receta_id)}',1)" aria-label="Una ración más">+</button></span></div>`).join("");
+  const sueltos = ing.map((x, n) => `<div class="cg-fila"><span>${esc(x.texto)}${x.apartado.map(a =>
+        `<small class="prep-r">❄ para la ${esc(paraPlato(a))}: ${esc(a.titulo)}</small>`).join("")}</span>
+        <span class="cg-n">${x.cantidad !== null && CONTABLE(x.unidad)
+          ? `<button class="btn" onclick="ajustaCongelado(${n},-1)" aria-label="Uno menos">−</button>
+             <button class="btn" onclick="ajustaCongelado(${n},1)" aria-label="Uno más">+</button>`
+          : `<button class="btn" onclick="ajustaCongelado(${n},null)" aria-label="Quitar">✕</button>`}</span></div>`).join("");
+  return `<h2>Congelador</h2><div class="card congelador">
+    ${cg.length ? `<div class="prep-sub cg-sub">Raciones</div>${raciones}` : ""}
+    ${ing.length ? `<div class="prep-sub cg-sub">Ingredientes</div>${sueltos}` : ""}
+    ${cg.length || ing.length ? "" : `<div class="meta">Vacío.</div>`}
+    <form class="anadir cg-anadir" onsubmit="congelar(event)"><input id="cg-nuevo" placeholder="Meter, p. ej. 1 filete de lubina"
+      autocomplete="off" enterkeyhint="done"><button class="btn">Meter</button></form>
     <div class="meta cg-ayuda">Al pasar el día en que se cocina un congelable, sus raciones de más entran solas aquí,
-      y el borrador de la semana siguiente las coloca antes de sortear el resto.</div></div>`;
+      y el borrador de la semana siguiente las coloca antes de sortear el resto. Los ingredientes sueltos (el filete
+      que sobró de una bandeja) se meten a mano: al preparar la compra se sacan de aquí en vez de comprarlos y la
+      víspera hay aviso de pasarlos al frigo.</div></div>`;
 }
 
 async function ajustaCongelador(receta, delta) {
   try { await api(`/api/congelador/${encodeURIComponent(receta)}`, {method: "POST", body: JSON.stringify({delta})}); await cargaPlan(); }
   catch (e) { fallo(e); }
+}
+
+async function ajustaCongelado(n, delta) {
+  const x = PLAN.congelado[n];
+  try {
+    await api("/api/congelado/ajuste", {method: "POST", body: JSON.stringify({clave: x.clave, unidad: x.unidad, delta})});
+    await cargaPlan(); PREP = null; pintaPrep();
+  } catch (e) { fallo(e); }
+}
+
+async function congelar(ev) {
+  ev.preventDefault();
+  const texto = $("cg-nuevo").value.trim();
+  if (!texto) return;
+  try {
+    const r = await api("/api/congelado", {method: "POST", body: JSON.stringify({texto})});
+    await cargaPlan(); PREP = null; pintaPrep(); toast(`Al congelador: ${r.texto}`);
+  } catch (e) { fallo(e); }
 }
 
 async function generarBorrador(lunes) {
@@ -710,7 +756,16 @@ function pintaCompra() {
 
 /* --- Ingredientes del plan → compra ------------------------------------------- */
 let PREP = null;   // null = cerrado; {cargando} | datos de /api/compra/plan
-const MOTIVO = i => i.en_lista ? "ya en la lista" : i.basico ? "despensa" : i.opcional ? "opcional" : "";
+// Del congelador: entero (no se compra) o una parte (se compra el resto).
+const ENTERO_CG = i => i.congelador !== null && !i.parcial;
+const MOTIVO = i => ENTERO_CG(i) ? "❄ en el congelador" : i.en_lista ? "ya en la lista" : i.basico ? "despensa"
+  : i.opcional ? "opcional" : "";
+const NOTA_CG = i => i.congelador === null ? ""
+  : `<small class="prep-cg">❄ ${i.parcial ? `${esc(i.congelador)} del congelador; esto es lo que falta`
+      : i.marcado ? "Se compra aunque lo hay en el congelador" : `Sale del congelador${i.congelador ? ` (${esc(i.congelador)})` : ""}`}</small>`;
+const NOTA_CG_VISIBLE = i => i.congelador !== null && (i.parcial || i.marcado) ? NOTA_CG(i) : "";
+// Lo que se aparta del congelador: lo entero que no se compra y lo parcial siempre.
+const APARTAR = i => i.congelador !== null && (i.parcial || !i.marcado);
 
 function htmlPrep() {
   if (!PREP) return `<div class="card prep-cta"><div><b>Ingredientes del plan</b>
@@ -724,8 +779,8 @@ function htmlPrep() {
       <button class="btn" onclick="cerrarPrep()">Cerrar</button></div>`;
   const fila = (i, n) => `<label class="item ${i.marcado ? "" : "apagado"}">
       <input type="checkbox" ${i.marcado ? "checked" : ""} onchange="PREP.items[${n}].marcado=this.checked;pintaPrep()">
-      <span><span class="prep-n">${esc(i.texto)}</span>${MOTIVO(i) ? ` <span class="tag">${MOTIVO(i)}</span>` : ""}
-      <small class="prep-r">${esc(i.recetas.join(" · "))}</small></span></label>`;
+      <span><span class="prep-n">${esc(i.texto)}</span>${MOTIVO(i) ? ` <span class="tag ${ENTERO_CG(i) ? "sobras" : ""}">${MOTIVO(i)}</span>` : ""}
+      ${NOTA_CG_VISIBLE(i)}<small class="prep-r">${esc(i.recetas.join(" · "))}</small></span></label>`;
   const idx = p.items.map((i, n) => [i, n]);
   const sel = p.items.filter(i => i.marcado).length;
   return `<div class="card prep">
@@ -749,9 +804,12 @@ async function abrirPrep() {
 async function pasarACompra() {
   const textos = PREP.items.filter(i => i.marcado).map(i => i.texto);
   const platos = PREP.platos.map(p => [p.fecha, p.tipo, p.receta_id]);
+  const apartar = PREP.items.filter(APARTAR).flatMap(i => i.apartar);
   try {
-    const r = await api("/api/compra/plan", {method: "POST", body: JSON.stringify({textos, platos})});
-    PREP = null; await cargaCompra(); toast(`Añadidos ${r.anadidos} a la lista`);
+    const r = await api("/api/compra/plan", {method: "POST", body: JSON.stringify({textos, platos, apartar})});
+    PREP = null; await cargaCompra();
+    if (r.apartados) await cargaPlan();
+    toast(`Añadidos ${r.anadidos} a la lista${r.apartados ? ` · ${r.apartados} del congelador` : ""}`);
   } catch (e) { fallo(e); }
 }
 
