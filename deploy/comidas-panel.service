@@ -1,7 +1,8 @@
 [Unit]
 Description=comidas: panel (FastAPI sobre Mealie)
-After=network.target mealie.service
-Wants=mealie.service
+# Mealie corre en Docker en el mismo servidor.
+After=network.target docker.service
+Wants=docker.service
 
 [Service]
 Type=simple

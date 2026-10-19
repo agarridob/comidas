@@ -1,7 +1,7 @@
 [Unit]
 Description=comidas: genera el borrador del plan de la semana siguiente y lo avisa al móvil
-After=network-online.target mealie.service
-Wants=mealie.service
+After=network-online.target docker.service
+Wants=docker.service
 
 [Service]
 Type=oneshot

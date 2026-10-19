@@ -1,7 +1,7 @@
 [Unit]
 Description=comidas: aviso al móvil de lo que hay que pasar al frigo para mañana
-After=network-online.target mealie.service
-Wants=mealie.service
+After=network-online.target docker.service
+Wants=docker.service
 
 [Service]
 Type=oneshot
